@@ -6,7 +6,7 @@ AK Studio（AI Kaisetsu Studio）は、解説動画のための編集アプリ�
 Claude と一緒に作る。Premiere Pro のように「モニター＋タイムライン」で見ながら、
 
 - 台本を書く（2 人の掛け合いなど。行ごとにメモを付けられる）
-- VoiSona Talk で声を作る（読み・アクセントの手直しつき）
+- 声のエンジン（VoiSona Talk・VOICEVOX。自作のエンジンも足せる）で声を作る（読みの辞書つき。VoiSona Talk ならアクセントの手直しも）
 - Python で書いた演出（テロップ・表・図解・録画の窓）を、コードを書き換えずに手で微調整する
 - 背景・録画・立ち絵・演出・字幕・声・効果音・BGM を合成して mp4 に書き出す
 
@@ -18,7 +18,7 @@ Claude と一緒に作る。Premiere Pro のように「モニター＋タイム
 
 - アプリ本体: Tauri v2（Rust）＋ React。合成・キャッシュ・再生・書き出しは Rust
 - 演出: 各回の `fx/<名前>_fx.py`（fxkit）を読み込んで描く。Python のワーカーを並列で常駐させる
-- 声: `voice/voice_server.py`（VoiSona Talk の中継）を裏で動かす
+- 声: `voice/voice_server.py`（声の中継）を裏で動かし、選んだ声のエンジンで作る（[docs/voice-engine.md](docs/voice-engine.md)）
 - Claude: MCP サーバー（`ak-studio-mcp.exe`）と Claude Code の Mod（`claude-plugin/ak-studio`）
 
 ## 要るもの
@@ -26,7 +26,7 @@ Claude と一緒に作る。Premiere Pro のように「モニター＋タイム
 - Windows 10 / 11（WebView2 は Windows 11 には入っている）
 - [Rust](https://rustup.rs/)（MSVC）と [Node.js](https://nodejs.org/)
 - Python 3.10 以上（演出のワーカーが使う。`pillow numpy scipy fonttools imageio-ffmpeg`）
-- [VoiSona Talk](https://voisona.com/)（声を作るとき。別に入れて、環境設定で API をオンにする）
+- 声のエンジン（声を作るとき。どちらか）: [VoiSona Talk](https://voisona.com/)（環境設定で API をオンにする）か [VOICEVOX](https://voicevox.hiroshiba.jp/)（起動しておくだけ）。自作のエンジンも使える（[docs/voice-engine.md](docs/voice-engine.md)）
 - [Claude Code](https://claude.com/claude-code)（Claude とつなぐとき）
 
 ## 入れ方・起動
@@ -55,16 +55,17 @@ MCP サーバーは `cargo build --release -p ak-studio-mcp`。テストは `npm
 | 回のフォルダ | 動画 1 本ぶんのフォルダ（「回」）を並べて置く所（例 `D:/videos`）。「回を開く」の一覧がここから出る。空欄でも、「回を開く」でフォルダを直接選べる |
 | Python | 演出のワーカーと声の中継を動かす Python。上の `pip install` をした Python を指す（PATH の `python` で足りれば `python` のまま） |
 | ffmpeg | 空欄なら PATH → `imageio-ffmpeg` の順に探す。書き出しが遅い・失敗するときだけ、自分で入れた ffmpeg を指す |
+| 声のエンジン | VoiSona Talk・VOICEVOX・ファイルを指定（自作のエンジン）から選ぶ。VOICEVOX が別の場所で動いているときは「VOICEVOX の場所（URL）」も |
 | VoiSona のメールアドレス・API パスワード | VoiSona Talk のアカウント。VoiSona Talk 側の環境設定で API をオンにし、そこで決めたパスワードを入れる（声を作らないなら空欄でよい） |
 
-保存すると演出のワーカーを作り直す。上の帯の「演出」「VoiSona」の丸が緑なら準備できている。赤のときは、「演出」を押すとワーカーのログ、「VoiSona」を押すと中継の起動し直しと理由が出る。
+保存すると演出のワーカーを作り直す。上の帯の「演出」と声のエンジン（VoiSona Talk・VOICEVOX など）の丸が緑なら準備できている。赤のときは、「演出」を押すとワーカーのログ、声のエンジンの丸を押すと中継の起動し直しと理由が出る。
 
 ## 回を作って動かす
 
 1. 回のフォルダの中に、動画 1 本ぶんのフォルダを作る（例 `D:/videos/coffee01`）
 2. 上の「回を開く」でそのフォルダを選び、左の台本タブの「台本を作成」→「＋ ブロック」「＋ 行」で台本を書く
    （ファイルは `script/<ブロック>.yaml`。手で書いてもよい。書式は [docs/script-format.md](docs/script-format.md)）。行の話者は「トーク1」「トーク2」
-3. 「音声を一括作成」で、VoiSona Talk が全部の行の声を作る。タイムラインに話者ごとの声が並ぶ
+3. 「音声を一括作成」で、声のエンジンが全部の行の声を作る。タイムラインに話者ごとの声が並ぶ
 4. 右上の「書き出し」→「台本 → 演出の入力」で、演出のコードが読む `files/script_cues.json`（セリフの開始・終了の秒）を書き出す
 5. 回の `fx/<名前>_fx.py` に演出を書く（下の例）。保存すると数秒でモニターに出る。位置・長さ・大きさの手直しは、モニターでドラッグするか右の「調整」で（コードは書き換えず、`fx/studio_overrides.json` に残る）
 6. 「書き出し」→「完成版 mp4（1920×1080）」で 1 本の動画にする

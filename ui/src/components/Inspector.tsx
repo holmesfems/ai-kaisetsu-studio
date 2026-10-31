@@ -4,6 +4,7 @@ import { failText } from "../logic/errors.ts";
 import { sizeOf } from "./Monitor";
 import { editDoc, holdHist, loadSpeakersInfo, patchOverride, sendChat, setSpeakerVoice, toast, useS } from "../state";
 import { VOICE_PARAMS, effectiveVoice, styleShares, withStyleWeight } from "../logic/speakervoice";
+import { engineOf, has, paramFields } from "../logic/voiceengine";
 import { SCRUB_START_PX, clampRange, fmtNum, nudge, parseNum, scrubMove, scrubMult, scrubValue } from "../logic/scrub";
 import { player } from "../io/player";
 import type { FontInfo, Group, MediaClip, Override, SubStyle, VoiceItem } from "../types";
@@ -366,12 +367,13 @@ function SubStyleFields({ style, base, onPatch, inheritFont }: {
 /** スタイルの帯の色（VoiSona の円グラフに近い色。スタイルの順） */
 const STYLE_COLORS = ["#2ac6cc", "#b04a58", "#a8243a", "#9a9420", "#3438a8", "#2f8f5a", "#a0602a", "#7a4aa8"];
 
-/** トークトラックの話者の声（VoiSona のグローバルパラメータとスタイルの重み）。_voice_speakers.json に保存 */
+/** トークトラックの話者の声（声のエンジンの話者の値とスタイルの重み）。script/ の下のエンジンごとのファイル（_voice_speakers*.json）に保存 */
 function SpeakerVoiceFields({ sp }: { sp: string }) {
   const over = useS((s) => s.script?.speakers?.[sp]);
   const hasScript = useS((s) => !!s.script);
   const info = useS((s) => s.speakersInfo);
   const voiceOk = useS((s) => s.voice?.ok);
+  const engine = engineOf(useS((s) => s.voice?.info));
   const run = useS((s) => s.synthAllRun);
   useEffect(() => { if (voiceOk && !info) loadSpeakersInfo(); }, [voiceOk, info]);
   const si = info?.speakers?.[sp];
@@ -379,27 +381,28 @@ function SpeakerVoiceFields({ sp }: { sp: string }) {
   if (!hasScript) return note("台本を開くと設定できます。");
   if (!si) {
     if (info?.error) return note(<>話者の声を読み込めませんでした: {info.error} <button onClick={loadSpeakersInfo}>再読み込み</button></>);
-    if (!voiceOk) return note("VoiSona につながると設定できます。");
-    if (info?.speakers) return note(`${sp} は声のプリセット（voice/voisona_presets.json）にありません。`);
+    if (!voiceOk) return note("声のエンジンにつながると設定できます。");
+    if (info?.speakers) return note(`${sp} は声のエンジン（${engine.label}）の話者のプリセットにありません。`);
     return note("（話者の声を読み込み中…）");
   }
-  const cur = effectiveVoice(si.base, over);
+  const fields = info?.range ? paramFields(info.range) : VOICE_PARAMS;
+  const cur = effectiveVoice(si.base, over, fields);
   const w = cur.style_weights ?? [];
   const shares = styleShares(w);
   const changed = !!over && Object.keys(over).length > 0;
   return (
     <>
       {note(<>
-        {sp} のすべてのセリフの声です（VoiSona Talk のグローバルパラメータ）。共通のプリセットから変更した項目を、この回の
-        script/_voice_speakers.json に保存します。変更すると {sp} の音声を作り直します。セリフごとに抑揚を変えた行は、そちらが優先されます。
+        {sp} のすべてのセリフの声です（声のエンジン（{engine.label}）の話者の値）。共通のプリセットから変更した項目を、この回の
+        script/{info?.file ?? "_voice_speakers.json"} に保存します。変更すると {sp} の音声を作り直します。セリフごとに抑揚を変えた行は、そちらが優先されます。
       </>)}
-      {VOICE_PARAMS.map((p) => (
-        <div key={p.key} title={`${p.abbr}: ${p.tip}`}>
-          <Num label={p.label} value={over?.[p.key]} def={si.base[p.key] ?? p.def} step={p.step} unit={p.unit}
+      {fields.map((p) => (
+        <div key={p.key} title={p.abbr ? `${p.abbr}: ${p.tip}` : p.tip}>
+          <Num label={p.label} value={over?.[p.key] as number | undefined} def={(si.base[p.key] as number | undefined) ?? p.def} step={p.step} unit={p.unit}
             min={p.min} max={p.max} onCommit={(v) => setSpeakerVoice(sp, { [p.key]: v })} />
         </div>
       ))}
-      {w.length > 0 && (
+      {has(engine, "styles") && w.length > 0 && (
         <>
           <div className="dim" style={{ fontSize: 12, margin: "10px 0 4px" }}>声のスタイル</div>
           <div className="voice-mix" title="スタイルの配合（重みの割合）">
@@ -417,7 +420,7 @@ function SpeakerVoiceFields({ sp }: { sp: string }) {
           ))}
         </>
       )}
-      {si.error && note(`VoiSona からスタイルの名前を受け取れなかったため、プリセットの名前で表示しています（${si.error}）`)}
+      {si.error && note(`声のエンジンからスタイルの名前を受け取れなかったため、プリセットの名前で表示しています（${si.error}）`)}
       <div className="row" style={{ gap: 6, marginTop: 6 }}>
         {run && <span className="dim2" style={{ fontSize: 11 }}>音声を作成中（{run.i + 1}/{run.n}）</span>}
         <span className="grow" />

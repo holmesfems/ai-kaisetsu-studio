@@ -15,7 +15,7 @@ export const ttsKeyText = (t: string) => trimRs(ttsText(t));
 // 行ごとの手直し（_voice.json・_voice_params.json）は行の id が鍵で、sp と読み上げの文が今の行と同じときだけ効く。
 // 文を直すと使われなくなり（消さない）、文を戻せばまた効く
 const adjOk = (e: { sp: string; text: string } | undefined, l: Line) => !!e && e.sp === l.sp && e.text === ttsKeyText(l.text);
-/** アクセントの手直し（VoiSona の解析結果の XML）。効いていなければ null */
+/** アクセントの手直し（声のエンジンの解析結果。VoiSona は XML）。効いていなければ null */
 export const voiceOf = (s: Script, l: Line): string | null => {
   const e = s.voice[l.id];
   return adjOk(e, l) ? e.analyzed_text || null : null;

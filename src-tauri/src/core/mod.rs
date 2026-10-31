@@ -74,8 +74,10 @@ pub struct Core {
     pub vstate: RwLock<VoiceState>,
     /// 並べ直し（`refresh_voice`）を 1 つずつにする。`st`・`vstate` より先に取り、持ったまま中継に問い合わせる
     voice_lock: Mutex<()>,
-    /// VoiSona の中継が起きているか（起きる前の解析の失敗は知らせない）
+    /// 声の中継が起きているか（起きる前の解析の失敗は知らせない）
     voice_up: AtomicBool,
+    /// 声のエンジンを切り替えた直後（次の「声がまだ無い行」の知らせを、失敗ではなく案内にする）
+    pub(crate) engine_switched: AtomicBool,
     /// 書き出しの間だけ Some。合成・ミックスで飛ばしたもの（読めない素材・字幕の失敗など）を集めて、結果の警告に出す
     pub export_issues: Mutex<Option<Vec<(String, usize)>>>,
     emitter: Mutex<Option<Emit>>,
@@ -139,6 +141,7 @@ impl Core {
             vstate: RwLock::new(VoiceState::default()),
             voice_lock: Mutex::new(()),
             voice_up: AtomicBool::new(false),
+            engine_switched: AtomicBool::new(false),
             export_issues: Mutex::new(None),
             emitter: Mutex::new(None),
             prefetch_jobs: Mutex::new(HashMap::new()),
@@ -335,7 +338,7 @@ impl Core {
             self.notice_detail(w.clone(), project.warning_detail.clone());
         }
         let mut script = if project.script_dir().is_dir() {
-            Some(ScriptStore::open(&project.script_dir())?)
+            Some(ScriptStore::open_with(&project.script_dir(), &crate::script::speakers_file(&self.settings.get().voice_engine))?)
         } else {
             None
         };
@@ -375,12 +378,12 @@ impl Core {
             self.notice_err("録画の差し込みの印を演出の調整に書けませんでした", &e);
         }
         self.watch(&root);
-        // VoiSona の中継は裏で起動（時間がかかることがある）
+        // 声の中継は裏で起動（時間がかかることがある）
         let me = self.clone();
         let root2 = root.clone();
         std::thread::spawn(move || {
-            let s = me.settings.get();
-            match me.voice.ensure(&s, &root2) {
+            // 設定は ensure が ensure_lock を取ってから読む（待っている間に声のエンジンが変わっても、古い設定で起動し直さない）
+            match me.voice.ensure_with(|| me.settings.get(), &root2) {
                 Ok(p) => {
                     me.emit("voice", json!({"ok": true, "info": p}));
                     me.voice_relay_up(&root2);
@@ -529,7 +532,7 @@ impl Core {
         let mut st = self.st.write();
         let ps = st.as_mut().ok_or_else(crate::app::error::no_project)?;
         if ps.script.is_none() {
-            ps.script = Some(ScriptStore::open(&ps.project.script_dir())?);
+            ps.script = Some(ScriptStore::open_with(&ps.project.script_dir(), &crate::script::speakers_file(&self.settings.get().voice_engine))?);
         }
         let store = ps.script.as_mut().unwrap();
         self.emit_script_notices(store);

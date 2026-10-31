@@ -6,6 +6,7 @@ import { akf } from "../io/api";
 import type { Line } from "../types";
 import { findLine, paramsOf, setParams, setVoice, voiceOf } from "../logic/voice";
 import { moras, splitWordEl } from "../logic/accsplit";
+import { engineOf, has } from "../logic/voiceengine";
 
 function accentBlocks(doc: Document): Element[][] {
   const blocks: Element[][] = [];
@@ -66,7 +67,12 @@ export default function AccentEditor({ line }: { line: Line }) {
     s.script?.speakers?.[line.sp]?.intonation
       ?? s.speakersInfo?.speakers?.[line.sp]?.base.intonation
       ?? s.voice?.info?.intonation?.[line.sp] ?? 1);
-  const [tab, setTab] = useState<"acc" | "len">(() => (localStorage.getItem("accTab") as any) || "acc");
+  const engine = engineOf(useS((s) => s.voice?.info));
+  const canAccent = has(engine, "accent");
+  const canLen = has(engine, "durations");
+  const canInto = has(engine, "intonation");
+  const [tabSaved, setTab] = useState<"acc" | "len">(() => (localStorage.getItem("accTab") as any) || "acc");
+  const tab = canLen ? tabSaved : "acc"; // 長さの段が無いエンジンでは、前に選んだ「長さ」を使わない
   const edited = voiceOf(script, line);
   const xml = edited || a?.analyzed_text;
   const fresh = item?.audio != null;
@@ -89,25 +95,37 @@ export default function AccentEditor({ line }: { line: Line }) {
   const intoCur = params.intonation ?? intoDefault;
   const head = (
     <div className="acc-tools" style={{ marginBottom: 4 }}>
-      <button className={tab === "acc" ? "on" : ""} onClick={() => { setTab("acc"); localStorage.setItem("accTab", "acc"); }}>アクセント</button>
-      <button className={tab === "len" ? "on" : ""} onClick={() => { setTab("len"); localStorage.setItem("accTab", "len"); }}>長さ</button>
-      <span style={{ marginLeft: 10 }}>抑揚</span>
-      <input
-        type="range" min={0} max={2} step={0.05} defaultValue={intoCur} key={intoCur}
-        onChange={(e) => { (e.target.nextSibling as HTMLElement).textContent = Number(e.target.value).toFixed(2); }}
-        onPointerUp={(e) => {
-          const v = Number((e.target as HTMLInputElement).value);
-          setParam("intonation", Math.abs(v - intoDefault) < 1e-6 ? null : v);
-        }}
-      />
-      <span className="ui">{Number(intoCur).toFixed(2)}</span>
-      {intoCur !== intoDefault && <button className="ghost" onClick={() => setParam("intonation", null)}>標準に戻す</button>}
+      {canAccent && <button className={tab === "acc" ? "on" : ""} onClick={() => { setTab("acc"); localStorage.setItem("accTab", "acc"); }}>アクセント</button>}
+      {canAccent && canLen && <button className={tab === "len" ? "on" : ""} onClick={() => { setTab("len"); localStorage.setItem("accTab", "len"); }}>長さ</button>}
+      {canInto && (
+        <>
+          <span style={{ marginLeft: 10 }}>抑揚</span>
+          <input
+            type="range" min={0} max={2} step={0.05} defaultValue={intoCur} key={intoCur}
+            onChange={(e) => { (e.target.nextSibling as HTMLElement).textContent = Number(e.target.value).toFixed(2); }}
+            onPointerUp={(e) => {
+              const v = Number((e.target as HTMLInputElement).value);
+              setParam("intonation", Math.abs(v - intoDefault) < 1e-6 ? null : v);
+            }}
+          />
+          <span className="ui">{Number(intoCur).toFixed(2)}</span>
+          {intoCur !== intoDefault && <button className="ghost" onClick={() => setParam("intonation", null)}>標準に戻す</button>}
+        </>
+      )}
       <span className="grow" />
       <button className="primary" onClick={play}>▶ 試聴</button>
     </div>
   );
 
   const doc = useMemo(() => (xml ? new DOMParser().parseFromString(xml, "application/xml") : null), [xml]);
+  if (!canAccent) {
+    return (
+      <div className="accent">
+        {head}
+        <div className="dim">このエンジン（{engine.label}）ではアクセントの手直しは使えません。読みは辞書で直せます</div>
+      </div>
+    );
+  }
   if (!xml || !doc) {
     return (
       <div className="accent">

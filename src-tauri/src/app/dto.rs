@@ -26,6 +26,10 @@ pub struct SettingsPatch {
     pub voisona_user: Option<String>,
     /// Some("") で消す。None は変えない
     pub voisona_pass: Option<String>,
+    /// 声のエンジン（voisona・voicevox、または .py の絶対パス。正しくなければ保存しない）
+    pub voice_engine: Option<String>,
+    /// VOICEVOX ENGINE の URL（空で既定の http://127.0.0.1:50021）
+    pub voicevox_url: Option<String>,
     /// 演出ワーカーの数（1〜32 に丸める）
     pub workers: Option<f64>,
     /// 演出キャッシュの上限 MB（100〜65536 に丸める）

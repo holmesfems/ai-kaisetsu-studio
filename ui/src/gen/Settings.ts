@@ -22,6 +22,14 @@ an_root: string,
  */
 template_dir: string, voisona_user: string, voisona_pass: string, voice_port: number, 
 /**
+ * 声のエンジン。`voisona`・`voicevox`、または自作のエンジンの .py の絶対パス（約束は docs/spec/issues-8-12.md）
+ */
+voice_engine: string, 
+/**
+ * VOICEVOX ENGINE の URL。空なら http://127.0.0.1:50021
+ */
+voicevox_url: string, 
+/**
  * 演出ワーカーの数
  */
 workers: number, 

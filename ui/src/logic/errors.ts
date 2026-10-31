@@ -7,7 +7,7 @@ import type { ErrorCode } from "../gen/ErrorCode.ts";
 export const ERROR_HINT: Partial<Record<ErrorCode, string>> = {
   no_project: "回を開いてから操作してください",
   need_ffmpeg: "設定で ffmpeg の場所を指定してください",
-  voice_down: "VoiSona Talk が起動しているか確認してください",
+  voice_down: "声のエンジン（VoiSona Talk・VOICEVOX など）が起動しているか確認してください",
   engine_down: "設定で Python の場所を確認し、演出を読み直してください",
 };
 

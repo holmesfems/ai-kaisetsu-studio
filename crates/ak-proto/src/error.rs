@@ -25,7 +25,7 @@ pub enum ErrorCode {
     Canceled,
     /// ffmpeg が見つからない
     NeedFfmpeg,
-    /// VoiSona の中継に接続できない
+    /// 声の中継に接続できない
     VoiceDown,
     /// 演出ワーカーが止まっている
     EngineDown,

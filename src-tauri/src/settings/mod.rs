@@ -75,6 +75,10 @@ pub struct Settings {
     pub voisona_user: String,
     pub voisona_pass: String,
     pub voice_port: u16,
+    /// 声のエンジン。`voisona`・`voicevox`、または自作のエンジンの .py の絶対パス（約束は docs/spec/issues-8-12.md）
+    pub voice_engine: String,
+    /// VOICEVOX ENGINE の URL。空なら http://127.0.0.1:50021
+    pub voicevox_url: String,
     /// 演出ワーカーの数
     pub workers: usize,
     /// 演出のフレームキャッシュの上限（MB）
@@ -108,6 +112,8 @@ impl Default for Settings {
             voisona_user: String::new(),
             voisona_pass: String::new(),
             voice_port: 8765,
+            voice_engine: "voisona".into(),
+            voicevox_url: String::new(),
             workers: (cpus / 4).clamp(2, 6),
             cache_mb: 1500,
             last_project: String::new(),
@@ -161,8 +167,39 @@ fn clamp_num(v: f64, min: f64, max: f64, int: bool) -> f64 {
     n.clamp(min, max)
 }
 
-/// 画面から来た項目ごとの変更を設定に当てる（渡された項目だけ変える。数は範囲に丸める）
-pub fn apply_patch(s: &mut Settings, p: &SettingsPatch) {
+/// 声のエンジンの値を確かめる。`voisona`・`voicevox`、または存在する .py の絶対パスだけを受け付ける（前後の空白は除く）
+pub fn validate_voice_engine(v: &str) -> Result<String, String> {
+    let v = v.trim();
+    if v == "voisona" || v == "voicevox" {
+        return Ok(v.to_string());
+    }
+    let path = Path::new(v);
+    let is_py = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("py"));
+    if !v.is_empty() && is_py && path.is_absolute() && path.is_file() {
+        return Ok(v.to_string());
+    }
+    let why = if v.is_empty() {
+        "値が空です".to_string()
+    } else if is_py && !path.is_absolute() {
+        "自作のエンジンは絶対パスで指定してください".to_string()
+    } else if is_py {
+        "ファイルがありません".to_string()
+    } else {
+        "voisona・voicevox、または .py の絶対パスを指定してください".to_string()
+    };
+    Err(format!("声のエンジンが見つかりません: {v}（{why}）"))
+}
+
+/// 画面から来た項目ごとの変更を設定に当てる（渡された項目だけ変える。数は範囲に丸める）。
+/// 値が正しくなければ、何も変えずに Err
+pub fn apply_patch(s: &mut Settings, p: &SettingsPatch) -> Result<(), String> {
+    let engine = p.voice_engine.as_deref().map(validate_voice_engine).transpose()?;
+    if let Some(v) = engine {
+        s.voice_engine = v;
+    }
+    if let Some(v) = &p.voicevox_url {
+        s.voicevox_url = v.trim().to_string();
+    }
     if let Some(v) = &p.an_root {
         s.an_root = v.clone();
     }
@@ -193,6 +230,7 @@ pub fn apply_patch(s: &mut Settings, p: &SettingsPatch) {
     if let Some(v) = p.delivery {
         s.delivery = v;
     }
+    Ok(())
 }
 
 impl Settings {
@@ -466,29 +504,65 @@ mod tests {
         assert_eq!(bad_delivery(r#"{"python":"py"}"#), None);
     }
 
+    /// 声のエンジンの値: 名前・存在する .py の絶対パスだけ通す
+    #[test]
+    fn validate_voice_engine_accepts_names_and_existing_py() {
+        assert_eq!(validate_voice_engine("voisona").as_deref(), Ok("voisona"));
+        assert_eq!(validate_voice_engine(" voicevox ").as_deref(), Ok("voicevox"));
+        let dir = std::env::temp_dir().join(format!("ak-engine-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let py = dir.join("my_tts.py");
+        std::fs::write(&py, "# engine").unwrap();
+        let py_s = py.to_string_lossy().to_string();
+        assert_eq!(validate_voice_engine(&py_s).as_deref(), Ok(py_s.as_str()));
+        // 無いパス・.py でないもの・相対パス・知らない名前・空
+        let missing = dir.join("none_tts.py").to_string_lossy().to_string();
+        for bad in [missing.as_str(), "zzz", "", "my_tts.py", &dir.to_string_lossy()] {
+            let e = validate_voice_engine(bad).unwrap_err();
+            assert!(e.starts_with("声のエンジンが見つかりません: "), "{bad}: {e}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// パッチの声のエンジン: 正しくなければ何も変えずに弾く
+    #[test]
+    fn apply_patch_voice_engine_fields() {
+        let mut s = Settings::default();
+        assert_eq!((s.voice_engine.as_str(), s.voicevox_url.as_str()), ("voisona", ""));
+        apply_patch(&mut s, &SettingsPatch { voice_engine: Some("voicevox".into()), voicevox_url: Some(" http://127.0.0.1:50022 ".into()), ..Default::default() }).unwrap();
+        assert_eq!((s.voice_engine.as_str(), s.voicevox_url.as_str()), ("voicevox", "http://127.0.0.1:50022"));
+        let before = s.clone();
+        let e = apply_patch(&mut s, &SettingsPatch { voice_engine: Some("nope".into()), voicevox_url: Some("x".into()), workers: Some(5.0), ..Default::default() }).unwrap_err();
+        assert!(e.contains("声のエンジンが見つかりません"));
+        assert_eq!((s.voice_engine.as_str(), s.voicevox_url.as_str(), s.workers), (before.voice_engine.as_str(), before.voicevox_url.as_str(), before.workers));
+        // 古い settings.json（項目が無い）は既定で読める
+        let old: Settings = serde_json::from_str(r#"{"python":"py"}"#).unwrap();
+        assert_eq!((old.voice_engine.as_str(), old.voicevox_url.as_str()), ("voisona", ""));
+    }
+
     /// パッチは渡した項目だけを変える。数は範囲に丸める
     #[test]
     fn apply_patch_changes_only_given_fields() {
         let mut s = Settings { last_project: "E:/an/x".into(), recent: vec!["a".into()], python: "py".into(), ..Settings::default() };
-        apply_patch(&mut s, &SettingsPatch { cache_mb: Some(1e9), workers: Some(2.6), ..Default::default() });
+        apply_patch(&mut s, &SettingsPatch { cache_mb: Some(1e9), workers: Some(2.6), ..Default::default() }).unwrap();
         assert_eq!(s.cache_mb, 65536);
         assert_eq!(s.workers, 3);
         assert_eq!(s.last_project, "E:/an/x");
         assert_eq!(s.recent, vec!["a".to_string()]);
         assert_eq!(s.python, "py");
-        apply_patch(&mut s, &SettingsPatch { workers: Some(0.0), cancel_grace: Some(f64::NAN), delivery: Some(Delivery::Hook), ..Default::default() });
+        apply_patch(&mut s, &SettingsPatch { workers: Some(0.0), cancel_grace: Some(f64::NAN), delivery: Some(Delivery::Hook), ..Default::default() }).unwrap();
         assert_eq!((s.workers, s.cancel_grace, s.delivery.as_str()), (1, 0.0, "hook"));
-        apply_patch(&mut s, &SettingsPatch { cancel_grace: Some(99.0), ..Default::default() });
+        apply_patch(&mut s, &SettingsPatch { cancel_grace: Some(99.0), ..Default::default() }).unwrap();
         assert_eq!((s.delivery, s.cancel_grace), (Delivery::Hook, 30.0));
-        apply_patch(&mut s, &SettingsPatch { python: Some("p2".into()), ..Default::default() });
+        apply_patch(&mut s, &SettingsPatch { python: Some("p2".into()), ..Default::default() }).unwrap();
         assert_eq!(s.python, "p2");
         // パスワード: None は変えない・Some(非空) は書き換え・Some("") は消す
         s.voisona_pass = "a".into();
-        apply_patch(&mut s, &SettingsPatch::default());
+        apply_patch(&mut s, &SettingsPatch::default()).unwrap();
         assert_eq!(s.voisona_pass, "a");
-        apply_patch(&mut s, &SettingsPatch { voisona_pass: Some("b".into()), ..Default::default() });
+        apply_patch(&mut s, &SettingsPatch { voisona_pass: Some("b".into()), ..Default::default() }).unwrap();
         assert_eq!(s.voisona_pass, "b");
-        apply_patch(&mut s, &SettingsPatch { voisona_pass: Some(String::new()), ..Default::default() });
+        apply_patch(&mut s, &SettingsPatch { voisona_pass: Some(String::new()), ..Default::default() }).unwrap();
         assert_eq!(s.voisona_pass, "");
         assert_eq!(s.workers, 1);
     }

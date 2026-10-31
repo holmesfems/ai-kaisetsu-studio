@@ -83,7 +83,7 @@ class Player {
     return this.ctxChain;
   }
 
-  /** 待つ声の行か（VoiSona が使えない・再生しながら作るのをあきらめた・この再生で作れなかった行は待たない） */
+  /** 待つ声の行か（声のエンジンが使えない・再生しながら作るのをあきらめた・この再生で作れなかった行は待たない） */
   private voiceWaitable = (lineId: string): boolean => {
     if (!get().voice?.ok) return false;
     // 声を鳴らさない（トークのミュート）・一括作成の最中（再生しながらは作らない）は待たない
@@ -115,7 +115,7 @@ class Player {
   private noteNoVoice(r: PlayReady) {
     if (this.notedNoVoice || get().voice?.ok || !r.voice.length) return;
     this.notedNoVoice = true;
-    toast("VoiSona が起動していないため、まだ作っていない声は待たずに再生します", "info");
+    toast("声のエンジンが起動していないため、まだ作っていない声は待たずに再生します", "info");
   }
 
   private enterWait(text: string) {

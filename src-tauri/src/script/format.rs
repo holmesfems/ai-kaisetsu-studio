@@ -63,7 +63,7 @@ pub struct Script {
     /// `_voice_params.json`（キー: 行の id。値: {sp, text, params}）
     #[ts(as = "std::collections::HashMap<String, ParamsAdj>")]
     pub params: serde_json::Map<String, Value>,
-    /// `_voice_speakers.json`（キー: 話者。値: VoiSona の global_parameters のうち、共通のプリセットから変えた項目）。
+    /// `_voice_speakers.json`（VoiSona。ほかのエンジンは `_voice_speakers.<名前>.json`。`speakers_file`）（キー: 話者。値: VoiSona の global_parameters のうち、共通のプリセットから変えた項目）。
     /// 保存のときに無ければ（None）、ディスクの中身をそのまま残す
     #[serde(default)]
     #[ts(type = "Record<string, import(\"../logic/speakervoice.ts\").SpeakerVoice>", optional = nullable)]

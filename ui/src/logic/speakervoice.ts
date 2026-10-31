@@ -1,6 +1,7 @@
-// 話者ごとの声（VoiSona Talk のグローバルパラメータとスタイルの重み）。トークトラックの ⚙ で変える。
-// 台本フォルダの _voice_speakers.json に、共通のプリセット（台本エディタの voisona_presets.json）から変えた項目だけを残す。
-// 声を作るときは、台本エディタの voice_server.py がプリセットにこれを重ねる（セリフごとの抑揚はさらにその上）
+// 話者ごとの声（声のエンジンの話者の値とスタイルの重み）。トークトラックの ⚙ で変える。
+// 台本フォルダの _voice_speakers.json に、共通のプリセット（エンジンの PRESETS。VoiSona なら voisona_presets.json）から変えた項目だけを残す。
+// 声を作るときは、声の中継（voice_server.py）がプリセットにこれを重ねる（セリフごとの抑揚はさらにその上）。
+// 項目と範囲はエンジンが決める（logic/voiceengine.ts の paramFields）。VOICE_PARAMS は知っている項目の名前・単位の表
 
 /** _voice_speakers.json の 1 人分（変えた項目だけ） */
 export interface SpeakerVoice {
@@ -11,24 +12,29 @@ export interface SpeakerVoice {
   alp?: number;
   huskiness?: number;
   style_weights?: number[];
+  /** エンジンが決める、知らない項目 */
+  [key: string]: number | number[] | undefined;
 }
 
-export type VoiceParam = Exclude<keyof SpeakerVoice, "style_weights">;
+export type VoiceParam = "speed" | "volume" | "pitch" | "intonation" | "alp" | "huskiness";
+
+/** 話者の声の項目の範囲（clamp・既定の値に要るところだけ） */
+export interface VoiceField { key: string; def: number; min: number; max: number }
 
 /** voice_server の /api/speakers が返す 1 人分 */
 export interface SpeakerInfo {
   voice_name: string;
   /** 共通のプリセットの値 */
   base: SpeakerVoice;
-  /** VoiSona のスタイルの名前（重みの順） */
+  /** エンジンのスタイルの名前（重みの順） */
   style_names: string[];
   /** 画面に出す名前（プリセットの日本語つきの名前。数が合わなければ style_names） */
   style_labels: string[];
-  /** VoiSona からスタイルの名前を受け取れなかったときのエラー */
+  /** エンジンからスタイルの名前を受け取れなかったときのエラー */
   error?: string | null;
 }
 
-/** VoiSona Talk の画面の並び（SPD・VOL・PIT・INTO・ALP・HUS）。範囲は VoiSona が受け付ける範囲 */
+/** 知っている項目の名前・単位の表（VoiSona Talk の画面の並び SPD・VOL・PIT・INTO・ALP・HUS。範囲は VoiSona が受け付ける範囲で、エンジンが違えば paramFields が範囲を差し替える） */
 export const VOICE_PARAMS: {
   key: VoiceParam; label: string; abbr: string; unit: string; def: number; min: number; max: number; step: number; tip: string;
 }[] = [
@@ -46,9 +52,9 @@ const r3 = (v: number) => Math.round(v * 1000) / 1000;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 /** その話者の今の値（プリセットに、この回の変更を重ねたもの） */
-export function effectiveVoice(base: SpeakerVoice | undefined, over: SpeakerVoice | undefined): SpeakerVoice {
+export function effectiveVoice(base: SpeakerVoice | undefined, over: SpeakerVoice | undefined, fields: VoiceField[] = VOICE_PARAMS): SpeakerVoice {
   const out: SpeakerVoice = { ...(base || {}) };
-  for (const p of VOICE_PARAMS) {
+  for (const p of fields) {
     const v = over?.[p.key];
     if (typeof v === "number") out[p.key] = v;
     else if (out[p.key] == null) out[p.key] = p.def;
@@ -66,12 +72,14 @@ export function patchVoice(
   over: SpeakerVoice | undefined,
   base: SpeakerVoice | undefined,
   patch: { [K in keyof SpeakerVoice]?: SpeakerVoice[K] | null },
+  fields: VoiceField[] = VOICE_PARAMS,
 ): SpeakerVoice | null {
   const out: SpeakerVoice = { ...(over || {}) };
-  for (const p of VOICE_PARAMS) {
+  for (const p of fields) {
     if (!(p.key in patch)) continue;
     const v = patch[p.key];
-    const b = base?.[p.key] ?? p.def;
+    if (v != null && typeof v !== "number") continue;
+    const b = (base?.[p.key] as number | undefined) ?? p.def;
     if (v == null || !Number.isFinite(v) || near(r3(clamp(v, p.min, p.max)), b)) delete out[p.key];
     else out[p.key] = r3(clamp(v, p.min, p.max));
   }
@@ -82,7 +90,7 @@ export function patchVoice(
     else out.style_weights = w;
   }
   // 項目は名前の順（Rust が保存して読み直したときと同じ順にし、音声の印（Rust の voice/analysis.rs の sig）が変わらないように）
-  const keys = Object.keys(out).sort() as (keyof SpeakerVoice)[];
+  const keys = Object.keys(out).sort();
   return keys.length ? Object.fromEntries(keys.map((k) => [k, out[k]])) as SpeakerVoice : null;
 }
 

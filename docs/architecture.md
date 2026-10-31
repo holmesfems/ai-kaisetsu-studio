@@ -36,7 +36,7 @@ flowchart LR
     voiceR[voice.rs<br/>声の中継の起動]
   end
   py[engine/akfx_worker.py<br/>fx・効果音・字幕]
-  vs[voice/voice_server.py<br/>VoiSona 中継]
+  vs[voice/voice_server.py<br/>声の中継]
   mcp[mcp/ ak-studio-mcp]
   mod[claude-plugin/ Mod]
 

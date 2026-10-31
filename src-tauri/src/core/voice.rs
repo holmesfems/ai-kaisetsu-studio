@@ -84,6 +84,45 @@ impl Core {
         self.refresh_voice(true);
     }
 
+    /// 声のエンジン（か VOICEVOX の URL）を変えた: 中継を止めて起こし直し、前のエンジンの解析を捨てて長さを取り直す。
+    /// 回を開いていなければ、次に回を開くときの起動に任せる。結果は回を開いたときと同じ「voice」の知らせで配る
+    pub fn restart_voice_for_engine(&self) {
+        self.voice.stop();
+        let Some(root) = self.root() else { return };
+        // 話者の声はエンジンごとのファイル（単位が違う）。新しいエンジンのファイルから読み直す
+        self.sync_speakers_file();
+        // 前のエンジンの長さ・音素で並べたままにしない（sig はエンジンを見ないので、捨てないと取り直されない）
+        self.vstate.write().reset();
+        self.voice_up.store(false, Ordering::SeqCst);
+        self.engine_switched.store(true, Ordering::SeqCst);
+        self.refresh_voice(false);
+        match self.voice.ensure_with(|| self.settings.get(), &root) {
+            Ok(p) => {
+                self.emit("voice", serde_json::json!({"ok": true, "info": p}));
+                self.voice_relay_up(&root);
+            }
+            Err(e) => {
+                let a = crate::app::error::api_error(&e);
+                self.emit("voice", serde_json::json!({"ok": false, "error": a.message, "code": a.code, "detail": a.detail}));
+            }
+        }
+    }
+
+    /// 今の声のエンジンの話者の声のファイルに台本の話者の声を合わせ、変わったら画面に台本を配る
+    pub(crate) fn sync_speakers_file(&self) {
+        let file = crate::script::speakers_file(&self.settings.get().voice_engine);
+        let r = {
+            let mut st = self.st.write();
+            let Some(store) = st.as_mut().and_then(|p| p.script.as_mut()) else { return };
+            store.set_speakers_file(&file).map(|changed| changed.then(|| serde_json::to_value(&store.script).unwrap_or(serde_json::Value::Null)))
+        };
+        match r {
+            Ok(Some(s)) => self.emit("script", serde_json::json!({"script": s, "external": false})),
+            Ok(None) => {}
+            Err(e) => self.notice_err("声のエンジンの話者の声の設定を読み込めませんでした（前のエンジンの値のままです）", &e),
+        }
+    }
+
     /// 台本・間隔・解析が変わったので、並びを作り直して画面に配る。並べ直しは 1 つずつ（`voice_lock`）。
     /// lookup が true なら、今の手直しで作った音声がまだ手元に無い行を中継に問い合わせる。
     /// 中継への問い合わせの間、`st` と `vstate` のロックは持たない（台本の保存を止めない）
@@ -123,8 +162,14 @@ impl Core {
                             v.last_err.clear();
                         }
                         changed = r.changed;
+                        // エンジンを切り替えた直後は、新しいエンジンの声がまだ無いのが当たり前なので、失敗ではなく案内にする
+                        let switched = self.engine_switched.swap(false, Ordering::SeqCst);
                         if first && r.missing > 0 {
-                            self.toast_error(&format!("{} 行の音声の長さを VoiSona から受け取れませんでした", r.missing), 9000);
+                            if switched {
+                                self.emit("toast", json!({"text": missing_after_switch(r.missing), "kind": "info", "ms": 8000}));
+                            } else {
+                                self.toast_error(&format!("{} 行の音声の長さを声のエンジンから受け取れませんでした", r.missing), 9000);
+                            }
                         }
                         if r.old_server {
                             self.toast_error(analysis::OLD_SERVER, 12000);
@@ -141,7 +186,7 @@ impl Core {
                             std::mem::replace(&mut v.last_err, msg.clone()) == msg
                         };
                         if up && !same {
-                            self.toast_err("VoiSona で台本を解析できませんでした", &e, 9000);
+                            self.toast_err("声のエンジンで台本を解析できませんでした", &e, 9000);
                         }
                     }
                 }
@@ -313,9 +358,20 @@ impl Core {
     }
 }
 
+/// 声のエンジンを切り替えた直後の、声がまだ無い行の案内
+fn missing_after_switch(n: usize) -> String {
+    format!("声のエンジンを切り替えました。{n} 行の声はまだこのエンジンで作っていません（「音声を一括作成」で作れます）")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_after_switch_is_guidance() {
+        let t = missing_after_switch(7);
+        assert!(t.contains("7 行") && t.contains("音声を一括作成") && !t.contains("できませんでした"), "{t}");
+    }
     use crate::script::format::{Block, Line};
     use crate::voice::key::vkey;
 

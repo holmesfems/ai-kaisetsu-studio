@@ -1,4 +1,4 @@
-//! 声の解析（VoiSona が返す長さ・読み・音素）のキャッシュと、中継への問い合わせ。
+//! 声の解析（声のエンジンが返す長さ・読み・音素）のキャッシュと、中継への問い合わせ。
 //! 「今の手直しで作った音声か」の署名（sig）もここで持つ。
 
 use crate::script::format::{Line, Script};
@@ -14,7 +14,7 @@ use ts_rs::TS;
 
 /// 古い中継（話者の声の変更を知らない）を使っているときの知らせ
 pub const OLD_SERVER: &str =
-    "VoiSona の中継（voice_server.py）が古いため、話者の声の設定を使えません。古い中継（台本エディタのフォルダから起動したもの）を閉じてから、AK Studio で中継を再起動してください。";
+    "声の中継（voice_server.py）が古いため、話者の声の設定を使えません。古い中継（台本エディタのフォルダから起動したもの）を閉じてから、AK Studio で中継を再起動してください。";
 
 /// 1 行ぶんの声の解析（中継の返す項目のうち、画面が使うもの）
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, TS)]
@@ -205,7 +205,7 @@ pub fn lookup(voice: &Voice, s: &Script, analyses: &mut Analyses) -> Result<Look
     }
     let body = json!({ "items": lines.iter().map(|l| req(s, l)).collect::<Vec<_>>() });
     let res = voice.post_timeout("/api/lookup", &body, Duration::from_secs(10))?;
-    let results = res["results"].as_array().ok_or_else(|| anyhow!("VoiSona の中継の返事に results がありません"))?;
+    let results = res["results"].as_array().ok_or_else(|| anyhow!("声の中継の返事に results がありません"))?;
     for (i, l) in lines.iter().enumerate() {
         let r = match results.get(i) {
             Some(v) if !v.is_null() => Some(serde_json::from_value::<Analysis>(v.clone())?),

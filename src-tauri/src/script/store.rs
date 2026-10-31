@@ -12,7 +12,25 @@ use super::format::*;
 
 const VOICE: &str = "_voice.json";
 const PARAMS: &str = "_voice_params.json";
+/// 話者の声の設定ファイル（VoiSona = 組み込みの既定。ほかのエンジンは `speakers_file` で別のファイルにする）
 const SPEAKERS: &str = "_voice_speakers.json";
+
+/// 声のエンジン（設定の `voice_engine`）の、話者ごとの声の設定のファイル名。
+/// 声の単位がエンジンで違う（VoiSona の音量 dB と VOICEVOX の倍率など）ので、エンジンごとに別のファイルに持つ。
+/// voisona は `_voice_speakers.json`（今までのまま）、それ以外は `_voice_speakers.<名前>.json`
+/// （名前は組み込みならその名前、.py のパスならファイル名の拡張子を除いた部分。英数字・`_`・`-` 以外は落とし、空なら custom）。
+/// voice_server.py の `speakers_file` と同じ規則
+pub fn speakers_file(voice_engine: &str) -> String {
+    let v = voice_engine.trim();
+    if v == "voisona" {
+        return SPEAKERS.to_string();
+    }
+    let last = v.replace('\\', "/");
+    let last = last.rsplit('/').next().unwrap_or("");
+    let stem = if last.to_lowercase().ends_with(".py") { &last[..last.len() - 3] } else { last };
+    let clean: String = stem.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-').collect();
+    format!("_voice_speakers.{}.json", if clean.is_empty() { "custom" } else { clean.as_str() })
+}
 const MEMO: &str = "_memo.md";
 const ORDER: &str = "_order.json";
 
@@ -32,7 +50,9 @@ pub struct ScriptStore {
     /// 読み込んだ中身を、決まった形で書き直したもの。画面の内容がこれと同じなら、人が手で整えたファイルは書き換えない。
     /// id を付けたファイルは無い（次の保存で書いて、id を残す）
     canon: HashMap<String, String>,
-    loaded_side: HashMap<&'static str, String>,
+    loaded_side: HashMap<String, String>,
+    /// 話者の声の設定のファイル名（エンジンごと。`speakers_file`）
+    speakers_file: String,
     session: String,
     backed_up: HashSet<String>,
     /// 直前の save で、外（Claude・voisona-accent）が書き換えたファイルの中身を残して読み直したか
@@ -54,6 +74,18 @@ fn side_of(s: &Script, name: &str) -> String {
         PARAMS => obj(&s.params),
         _ => obj(&s.speakers.clone().unwrap_or_default()),
     }
+}
+
+/// 付属の JSON（アクセントの手直し・抑揚・話者の声）を読む。無い・空なら空の Map。
+/// 壊れていたら空として読まない（次の保存で {} を書いて手直しが消えるため）。書きかけのこともあるので、何も変えずにエラーにする
+fn read_side_json(dir: &Path, name: &str) -> Result<(String, serde_json::Map<String, Value>)> {
+    let t = read_opt(&dir.join(name)).unwrap_or_else(|| "{}".into());
+    let v: serde_json::Map<String, Value> = if t.trim().is_empty() {
+        Default::default()
+    } else {
+        serde_json::from_str(&t).with_context(|| format!("{name} が読めません（書きかけかもしれません）"))?
+    };
+    Ok((t, v))
 }
 
 fn read_opt(p: &Path) -> Option<String> {
@@ -100,6 +132,11 @@ fn md_todo(dir: &Path) -> Result<(Vec<String>, Vec<String>)> {
 
 impl ScriptStore {
     pub fn open(dir: &Path) -> Result<Self> {
+        Self::open_with(dir, SPEAKERS)
+    }
+
+    /// 話者の声の設定を speakers_file（`speakers_file()` の返り）から読む形で開く
+    pub fn open_with(dir: &Path, speakers_file: &str) -> Result<Self> {
         std::fs::create_dir_all(dir).ok();
         let mut st = ScriptStore {
             dir: dir.to_path_buf(),
@@ -107,6 +144,7 @@ impl ScriptStore {
             loaded: HashMap::new(),
             canon: HashMap::new(),
             loaded_side: HashMap::new(),
+            speakers_file: speakers_file.to_string(),
             session: chrono::Local::now().format("%Y%m%d-%H%M%S").to_string(),
             backed_up: HashSet::new(),
             merged_external: false,
@@ -236,18 +274,10 @@ impl ScriptStore {
     pub fn reload(&mut self, prev: Option<&Script>) -> Result<()> {
         // アクセントの手直し・抑揚（voisona-accent スキルが書く）は、壊れていたら空として読まない。
         // 空として読むと、次の保存で {} を書いて手直しが消える。書きかけのこともあるので、何も変えずにエラーにする
-        let side_json = |name: &str| -> Result<(String, serde_json::Map<String, Value>)> {
-            let t = read_opt(&self.dir.join(name)).unwrap_or_else(|| "{}".into());
-            let v: serde_json::Map<String, Value> = if t.trim().is_empty() {
-                Default::default()
-            } else {
-                serde_json::from_str(&t).with_context(|| format!("{name} が読めません（書きかけかもしれません）"))?
-            };
-            Ok((t, v))
-        };
+        let side_json = |name: &str| read_side_json(&self.dir, name);
         let (voice, voice_v) = side_json(VOICE)?;
         let (params, params_v) = side_json(PARAMS)?;
-        let (speakers, speakers_v) = side_json(SPEAKERS)?;
+        let (speakers, speakers_v) = side_json(&self.speakers_file)?;
         self.migrate_md()?;
         let (mut files, _) = scan(&self.dir)?;
         // 順番（古い .md の名前で書いてあっても .yaml として扱う）
@@ -319,14 +349,31 @@ impl ScriptStore {
         let memo = read_opt(&self.dir.join(MEMO)).unwrap_or_default();
         self.loaded = loaded;
         self.canon = canon;
-        self.loaded_side.insert(MEMO, memo.clone());
-        self.loaded_side.insert(VOICE, voice);
-        self.loaded_side.insert(PARAMS, params);
-        self.loaded_side.insert(SPEAKERS, speakers);
+        self.loaded_side.insert(MEMO.to_string(), memo.clone());
+        self.loaded_side.insert(VOICE.to_string(), voice);
+        self.loaded_side.insert(PARAMS.to_string(), params);
+        self.loaded_side.insert(self.speakers_file.clone(), speakers);
         let rev = self.script.rev + 1;
         self.script = Script { blocks, memo, voice: voice_v, params: params_v, speakers: Some(speakers_v), rev };
         self.remember();
         Ok(())
+    }
+
+    /// 話者の声の設定のファイルを切り替える（声のエンジンを変えたとき）。新しいファイルから話者の声を読み直し、rev を進める。
+    /// 変わったら true。新しいファイルが読めなければ、何も変えずにエラー（壊れたファイルを空として上書きしないため）。
+    /// 前のエンジンのファイルは触らない（そのエンジンに戻したときに読み直す）
+    pub fn set_speakers_file(&mut self, name: &str) -> Result<bool> {
+        if self.speakers_file == name {
+            return Ok(false);
+        }
+        let (text, map) = read_side_json(&self.dir, name)?;
+        self.loaded_side.remove(&self.speakers_file);
+        self.speakers_file = name.to_string();
+        self.loaded_side.insert(name.to_string(), text);
+        self.script.speakers = Some(map);
+        self.script.rev += 1;
+        self.remember();
+        Ok(true)
     }
 
     /// 今の台本を rev つきで覚える（古い rev をもとにした保存のマージ用）
@@ -445,7 +492,7 @@ impl ScriptStore {
         // 書くもの・消すものは、控えをすべて残せてから書く（控えが残せなければ何も書かずに Err）
         let mut writes: Vec<(String, String)> = vec![];
         let mut removes: Vec<String> = vec![];
-        let mut side_written: Vec<(&'static str, String)> = vec![];
+        let mut side_written: Vec<(String, String)> = vec![];
         for (f, c) in &snapshot {
             if let Some(base) = self.loaded.get(f).cloned() {
                 let disk = read_opt(&self.dir.join(f));
@@ -522,13 +569,14 @@ impl ScriptStore {
             changed = true;
         }
         // 付属ファイル（中身が変わったときだけ）
-        let side: [(&'static str, String); 4] = [
-            (MEMO, s.memo.clone()),
-            (VOICE, serde_json::to_string(&Value::Object(s.voice.clone()))?),
-            (PARAMS, serde_json::to_string(&Value::Object(s.params.clone()))?),
-            (SPEAKERS, serde_json::to_string(&Value::Object(s.speakers.clone().unwrap_or_default()))?),
+        let side: [(String, String); 4] = [
+            (MEMO.to_string(), s.memo.clone()),
+            (VOICE.to_string(), serde_json::to_string(&Value::Object(s.voice.clone()))?),
+            (PARAMS.to_string(), serde_json::to_string(&Value::Object(s.params.clone()))?),
+            (self.speakers_file.clone(), serde_json::to_string(&Value::Object(s.speakers.clone().unwrap_or_default()))?),
         ];
         for (name, content) in side {
+            let name = name.as_str();
             let prev = self.loaded_side.get(name).cloned().unwrap_or_default();
             let empty = if name == MEMO { "" } else { "{}" };
             let same_cur = prev == content || (prev.is_empty() && content == empty);
@@ -557,7 +605,7 @@ impl ScriptStore {
                 self.backup(name, &prev)?;
             }
             writes.push((name.to_string(), content.clone()));
-            side_written.push((name, content));
+            side_written.push((name.to_string(), content));
             changed = true;
         }
         // 途中で書けなかったときは、書けた分も loaded に入らない。次の保存で自分の書いた中身を外の変更として控えに残すが、消えはしない
@@ -634,8 +682,8 @@ pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
 
 /// ほかの回の台本を、書き換えずに読む。`dir` は回の `script/` フォルダ。
 /// 直下のファイルだけを一時フォルダに写し、そこで開く（古い .md の移行や _voice.json の鍵の書き換えは一時フォルダの中で起きる）。
-/// 一時フォルダは読み終わったら消す（消せなくてもエラーにしない）
-pub fn peek(dir: &Path) -> Result<Script> {
+/// 一時フォルダは読み終わったら消す（消せなくてもエラーにしない）。話者の声は speakers_file（今のエンジンのもの）から読む
+pub fn peek(dir: &Path, speakers_file: &str) -> Result<Script> {
     static SEQ: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let rd = std::fs::read_dir(dir).with_context(|| format!("{} を読めません", dir.display()))?;
     let tmp = std::env::temp_dir().join(format!(
@@ -653,7 +701,7 @@ pub fn peek(dir: &Path) -> Result<Script> {
                     .with_context(|| format!("{} を写せません", e.file_name().to_string_lossy()))?;
             }
         }
-        Ok(ScriptStore::open(&tmp)?.script)
+        Ok(ScriptStore::open_with(&tmp, speakers_file)?.script)
     };
     let r = run();
     let _ = std::fs::remove_dir_all(&tmp);
@@ -983,6 +1031,75 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    #[test]
+    fn speakers_file_per_engine() {
+        assert_eq!(speakers_file("voisona"), "_voice_speakers.json");
+        assert_eq!(speakers_file(" voisona "), "_voice_speakers.json");
+        assert_eq!(speakers_file("voicevox"), "_voice_speakers.voicevox.json");
+        // パスのエンジンはファイル名の拡張子を除いた部分（区切りは \ も /）
+        assert_eq!(speakers_file(r"D:\Engines\My_TTS.py"), "_voice_speakers.My_TTS.json");
+        assert_eq!(speakers_file("D:/e/my-tts.PY"), "_voice_speakers.my-tts.json");
+        // 英数字・_・- 以外は落とし、空なら custom
+        assert_eq!(speakers_file("D:/e/my tts(2).py"), "_voice_speakers.mytts2.json");
+        assert_eq!(speakers_file("D:/e/読み上げ.py"), "_voice_speakers.custom.json");
+        assert_eq!(speakers_file(""), "_voice_speakers.custom.json");
+    }
+
+    #[test]
+    fn speakers_follow_the_engine_file() {
+        let dir = tmp("speakers-engine");
+        std::fs::write(dir.join("1.yaml"), yaml("あ")).unwrap();
+        let vv = speakers_file("voicevox");
+        std::fs::write(dir.join(SPEAKERS), r#"{"トーク1":{"volume":-3.0}}"#).unwrap();
+        let mut st = ScriptStore::open(&dir).unwrap();
+        assert_eq!(st.script.speakers.as_ref().unwrap()["トーク1"]["volume"], -3.0);
+        // VOICEVOX に切り替える: VoiSona の値（dB）は持ち越さず、VOICEVOX のファイル（無ければ空）を読む
+        let rev = st.script.rev;
+        assert!(st.set_speakers_file(&vv).unwrap());
+        assert!(st.script.speakers.as_ref().unwrap().is_empty());
+        assert!(st.script.rev > rev);
+        assert!(!st.set_speakers_file(&vv).unwrap());
+        // 保存は VOICEVOX のファイルに書き、VoiSona のファイルは変えない
+        let mut s = st.script.clone();
+        s.speakers.as_mut().unwrap().insert("トーク1".into(), serde_json::json!({"volume": 1.2}));
+        assert!(st.save(s).unwrap());
+        let disk: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(&vv)).unwrap()).unwrap();
+        assert_eq!(disk["トーク1"]["volume"], 1.2);
+        let vs: Value = serde_json::from_str(&std::fs::read_to_string(dir.join(SPEAKERS)).unwrap()).unwrap();
+        assert_eq!(vs["トーク1"]["volume"], -3.0);
+        // 開き直しても、エンジンのファイルを読む
+        assert_eq!(ScriptStore::open_with(&dir, &vv).unwrap().script.speakers.as_ref().unwrap()["トーク1"]["volume"], 1.2);
+        assert_eq!(ScriptStore::open(&dir).unwrap().script.speakers.as_ref().unwrap()["トーク1"]["volume"], -3.0);
+        // 見張り: 今のエンジンのファイルが外で変わったときだけ「変わった」。別のエンジンのファイルは関係ない
+        assert!(!st.changed_on_disk());
+        std::fs::write(dir.join(SPEAKERS), r#"{"トーク1":{"volume":0.0}}"#).unwrap();
+        assert!(!st.changed_on_disk());
+        std::fs::write(dir.join(&vv), r#"{"トーク1":{"volume":1.5}}"#).unwrap();
+        assert!(st.changed_on_disk());
+        let prev = st.script.clone();
+        st.reload(Some(&prev)).unwrap();
+        assert_eq!(st.script.speakers.as_ref().unwrap()["トーク1"]["volume"], 1.5);
+        // VoiSona に戻すと、VoiSona のファイルを読み直す
+        assert!(st.set_speakers_file(SPEAKERS).unwrap());
+        assert_eq!(st.script.speakers.as_ref().unwrap()["トーク1"]["volume"], 0.0);
+        // 読めないファイルへの切り替えは、何も変えずにエラー
+        std::fs::write(dir.join(&vv), r#"{"トーク1": "#).unwrap();
+        assert!(st.set_speakers_file(&vv).is_err());
+        assert_eq!(st.script.speakers.as_ref().unwrap()["トーク1"]["volume"], 0.0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn peek_reads_the_given_speakers_file() {
+        let dir = tmp("peek-speakers");
+        std::fs::write(dir.join("1.yaml"), yaml("あ")).unwrap();
+        std::fs::write(dir.join(SPEAKERS), r#"{"トーク1":{"volume":-3.0}}"#).unwrap();
+        std::fs::write(dir.join("_voice_speakers.voicevox.json"), r#"{"トーク1":{"volume":1.1}}"#).unwrap();
+        assert_eq!(peek(&dir, SPEAKERS).unwrap().speakers.unwrap()["トーク1"]["volume"], -3.0);
+        assert_eq!(peek(&dir, "_voice_speakers.voicevox.json").unwrap().speakers.unwrap()["トーク1"]["volume"], 1.1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     // ---- 古い回（.md）の移行
 
     fn backups(dir: &Path) -> Vec<String> {
@@ -1102,7 +1219,7 @@ mod tests {
         let dir = tmp("peek-yaml");
         std::fs::write(dir.join("1.yaml"), yaml("よむだけ")).unwrap();
         let before = snapshot(&dir);
-        let s = peek(&dir).unwrap();
+        let s = peek(&dir, SPEAKERS).unwrap();
         assert_eq!(s.blocks.len(), 1);
         assert_eq!(s.blocks[0].lines[0].text, "よむだけ");
         assert_eq!(snapshot(&dir), before);
@@ -1120,7 +1237,7 @@ mod tests {
         let v = serde_json::json!({"トーク1\u{1}同じ文です": "<xml-same/>"});
         std::fs::write(dir.join(VOICE), serde_json::to_string(&v).unwrap()).unwrap();
         let before = snapshot(&dir);
-        let s = peek(&dir).unwrap();
+        let s = peek(&dir, SPEAKERS).unwrap();
         let l = &s.blocks[0].lines[0];
         assert_eq!(s.voice_of(l), Some("<xml-same/>"));
         assert!(s.voice.contains_key(&l.id), "鍵は行の id");
@@ -1133,7 +1250,7 @@ mod tests {
     #[test]
     fn peek_missing_dir_errors() {
         let dir = tmp("peek-none").join("script");
-        assert!(peek(&dir).is_err());
+        assert!(peek(&dir, SPEAKERS).is_err());
         let _ = std::fs::remove_dir_all(dir.parent().unwrap());
     }
 
