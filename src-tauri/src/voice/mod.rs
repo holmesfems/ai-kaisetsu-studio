@@ -1,4 +1,4 @@
-//! 声（VoiSona Talk の中継）と、セリフの並び。
+//! 声（声のエンジンの中継）と、セリフの並び。
 
 pub mod analysis;
 pub mod key;

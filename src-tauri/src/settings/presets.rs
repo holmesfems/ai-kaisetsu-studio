@@ -7,6 +7,7 @@
 //! - `subtitle.json` … 字幕の見た目（`SubStyle` の項目。一部だけでもよい）
 //! - `project.json` … `{"bg_loop": "背景ループの mp4 のパス", "template_dir": "ひな形のフォルダ"}`
 //! - `voisona_presets.json` … 声の値（voice/voisona_presets.json と同じ形。あれば voice/ の素の既定の代わりに書き出す）
+//! - `voicevox_presets.json` … VOICEVOX の声の値（voice/voicevox_presets.json と同じ形。同じ扱い）
 //!
 //! 読めないプリセットは捨てて素の既定で動き、理由を `warnings` に残す（起動時の知らせに出す）。
 
@@ -25,6 +26,8 @@ pub struct Presets {
     pub template_dir: Option<String>,
     /// 声の値（検証済みの JSON のバイト列）
     pub voice: Option<Vec<u8>>,
+    /// VOICEVOX の声の値（検証済みの JSON のバイト列）
+    pub voicevox: Option<Vec<u8>>,
     /// 読めなかったプリセットの理由
     pub warnings: Vec<String>,
 }
@@ -70,11 +73,13 @@ pub fn load(files: &[(&str, &[u8])]) -> Presets {
             }
         }
     }
-    if let Some(d) = get(files, "voisona_presets.json") {
-        match parse("voisona_presets.json", d, &mut p.warnings) {
-            Some(v) if v.get("speakers").is_some_and(|s| s.is_object()) => p.voice = Some(d.to_vec()),
-            Some(_) => p.warnings.push("プリセット voisona_presets.json に speakers がありません。素の既定の声で動きます".into()),
-            None => {}
+    for (name, slot) in [("voisona_presets.json", &mut p.voice), ("voicevox_presets.json", &mut p.voicevox)] {
+        if let Some(d) = get(files, name) {
+            match parse(name, d, &mut p.warnings) {
+                Some(v) if v.get("speakers").is_some_and(|s| s.is_object()) => *slot = Some(d.to_vec()),
+                Some(_) => p.warnings.push(format!("プリセット {name} に speakers がありません。素の既定の声で動きます")),
+                None => {}
+            }
         }
     }
     p
@@ -102,9 +107,10 @@ mod tests {
             ("subtitle.json", "{ぶっこわれ".as_bytes()),
             ("project.json", br#"{"bg_loop": 5, "template_dir": 1}"#),
             ("voisona_presets.json", br#"{"line_gap": 1}"#),
+            ("voicevox_presets.json", br#"{"speakers": []}"#),
         ]);
-        assert!(p.subtitle.is_none() && p.bg_loop.is_none() && p.voice.is_none());
-        assert_eq!(p.warnings.len(), 4, "{:?}", p.warnings);
+        assert!(p.subtitle.is_none() && p.bg_loop.is_none() && p.voice.is_none() && p.voicevox.is_none());
+        assert_eq!(p.warnings.len(), 5, "{:?}", p.warnings);
         assert!(p.warnings[0].contains("subtitle.json"), "{:?}", p.warnings);
         // 型違いの項目
         let p = load(&[("subtitle.json", "{\"size\": \"でかい\"}".as_bytes())]);
@@ -120,12 +126,13 @@ mod tests {
             ("subtitle.json", br##"{"stroke": "#123456"}"##),
             ("project.json", br#"{"bg_loop": " D:/x/bg.mp4 ", "template_dir": "D:/tpl"}"#),
             ("voisona_presets.json", br#"{"speakers": {}}"#),
+            ("voicevox_presets.json", br#"{"speakers": {}}"#),
         ]);
         assert!(p.warnings.is_empty(), "{:?}", p.warnings);
         assert_eq!(p.subtitle.unwrap()["stroke"], "#123456");
         assert_eq!(p.bg_loop.as_deref(), Some("D:/x/bg.mp4"));
         assert_eq!(p.template_dir.as_deref(), Some("D:/tpl"));
-        assert!(p.voice.is_some());
+        assert!(p.voice.is_some() && p.voicevox.is_some());
     }
 
     /// 埋め込んだプリセットが（あれば）読める。警告が出ないこと

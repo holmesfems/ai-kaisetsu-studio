@@ -443,7 +443,12 @@ pub async fn build_info() -> R<String> {
 #[tauri::command]
 pub async fn settings_patch(core: C<'_>, p: SettingsPatch) -> R<()> {
     let before = core.settings.get();
-    core.settings.update(|x| crate::settings::apply_patch(x, &p));
+    // 正しくない値（声のエンジンのパスなど）は、何も保存せずに弾く
+    let mut checked = before.clone();
+    crate::settings::apply_patch(&mut checked, &p).map_err(|e| coded(ErrorCode::BadInput, e))?;
+    core.settings.update(|x| {
+        let _ = crate::settings::apply_patch(x, &p);
+    });
     let s = core.settings.get();
     if p.python.is_some() && before.python != s.python {
         let py = crate::settings::resolve_python(&s.python);
@@ -460,6 +465,16 @@ pub async fn settings_patch(core: C<'_>, p: SettingsPatch) -> R<()> {
     }
     if p.cache_mb.is_some() && before.cache_mb != s.cache_mb {
         *core.cache.budget.lock() = s.cache_mb << 20;
+    }
+    // 声のエンジン・VOICEVOX の URL が変わった: 中継を止めて起こし直し、長さを取り直す。
+    // 起こし直しの失敗は設定の保存の失敗ではない（保存はできた）ので、回を開いたときと同じ「voice」の知らせで画面に出す
+    if before.voice_engine != s.voice_engine || before.voicevox_url != s.voicevox_url {
+        let c = core.inner().clone();
+        bg(move || {
+            c.restart_voice_for_engine();
+            Ok(())
+        })
+        .await?;
     }
     Ok(())
 }

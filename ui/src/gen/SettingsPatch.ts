@@ -11,6 +11,14 @@ export type SettingsPatch = { an_root?: string, template_dir?: string, python?: 
  */
 voisona_pass?: string, 
 /**
+ * 声のエンジン（voisona・voicevox、または .py の絶対パス。正しくなければ保存しない）
+ */
+voice_engine?: string, 
+/**
+ * VOICEVOX ENGINE の URL（空で既定の http://127.0.0.1:50021）
+ */
+voicevox_url?: string, 
+/**
  * 演出ワーカーの数（1〜32 に丸める）
  */
 workers?: number, 

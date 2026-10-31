@@ -69,17 +69,24 @@ pub(crate) const VOICE_FILES: &[(&str, &[u8])] = &[
     ("voice_report.py", include_bytes!("../../../voice/voice_report.py")),
     ("voice_review.py", include_bytes!("../../../voice/voice_review.py")),
     ("voice_server.py", include_bytes!("../../../voice/voice_server.py")),
+    ("voicecommon.py", include_bytes!("../../../voice/voicecommon.py")),
+    ("voicevox_presets.json", include_bytes!("../../../voice/voicevox_presets.json")),
+    ("voicevox_tts.py", include_bytes!("../../../voice/voicevox_tts.py")),
     ("voisona_presets.json", include_bytes!("../../../voice/voisona_presets.json")),
     ("voisona_tts.py", include_bytes!("../../../voice/voisona_tts.py")),
 ];
 
-/// 書き出す声の中継の表。プリセットに声の値（voisona_presets.json）があれば、素の既定の代わりにそれを入れる（旧#173）
+/// 書き出す声の中継の表。プリセットに声の値（voisona_presets.json・voicevox_presets.json）があれば、素の既定の代わりにそれを入れる（旧#173）
 pub(crate) fn voice_files<'a>(p: &'a super::Presets) -> Vec<(&'a str, &'a [u8])> {
     VOICE_FILES
         .iter()
-        .map(|(rel, data)| match (*rel, p.voice.as_deref()) {
-            ("voisona_presets.json", Some(v)) => (*rel, v),
-            _ => (*rel, *data),
+        .map(|(rel, data)| {
+            let over = match *rel {
+                "voisona_presets.json" => p.voice.as_deref(),
+                "voicevox_presets.json" => p.voicevox.as_deref(),
+                _ => None,
+            };
+            (*rel, over.unwrap_or(*data))
         })
         .collect()
 }
@@ -231,6 +238,14 @@ mod voice_tests {
         let some = super::super::presets::load(&[("voisona_presets.json", br#"{"speakers":{}}"#)]);
         let t = voice_files(&some);
         assert_eq!(t.iter().find(|(r, _)| *r == "voisona_presets.json").unwrap().1, br#"{"speakers":{}}"#);
+        assert_eq!(t.len(), VOICE_FILES.len());
+        // voicevox_presets.json も同じ扱い（voisona 側の上書きとは独立）
+        let vbase = VOICE_FILES.iter().find(|(r, _)| *r == "voicevox_presets.json").unwrap().1;
+        assert_eq!(t.iter().find(|(r, _)| *r == "voicevox_presets.json").unwrap().1, vbase);
+        let vv = super::super::presets::load(&[("voicevox_presets.json", br#"{"speakers":{"a":{}}}"#)]);
+        let t = voice_files(&vv);
+        assert_eq!(t.iter().find(|(r, _)| *r == "voicevox_presets.json").unwrap().1, br#"{"speakers":{"a":{}}}"#);
+        assert_eq!(t.iter().find(|(r, _)| *r == "voisona_presets.json").unwrap().1, base);
         assert_eq!(t.len(), VOICE_FILES.len());
     }
 

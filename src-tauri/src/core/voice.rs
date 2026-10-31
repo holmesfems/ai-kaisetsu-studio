@@ -84,6 +84,27 @@ impl Core {
         self.refresh_voice(true);
     }
 
+    /// 声のエンジン（か VOICEVOX の URL）を変えた: 中継を止めて起こし直し、前のエンジンの解析を捨てて長さを取り直す。
+    /// 回を開いていなければ、次に回を開くときの起動に任せる。結果は回を開いたときと同じ「voice」の知らせで配る
+    pub fn restart_voice_for_engine(&self) {
+        self.voice.stop();
+        let Some(root) = self.root() else { return };
+        // 前のエンジンの長さ・音素で並べたままにしない（sig はエンジンを見ないので、捨てないと取り直されない）
+        self.vstate.write().reset();
+        self.voice_up.store(false, Ordering::SeqCst);
+        self.refresh_voice(false);
+        match self.voice.ensure(&self.settings.get(), &root) {
+            Ok(p) => {
+                self.emit("voice", serde_json::json!({"ok": true, "info": p}));
+                self.voice_relay_up(&root);
+            }
+            Err(e) => {
+                let a = crate::app::error::api_error(&e);
+                self.emit("voice", serde_json::json!({"ok": false, "error": a.message, "code": a.code, "detail": a.detail}));
+            }
+        }
+    }
+
     /// 台本・間隔・解析が変わったので、並びを作り直して画面に配る。並べ直しは 1 つずつ（`voice_lock`）。
     /// lookup が true なら、今の手直しで作った音声がまだ手元に無い行を中継に問い合わせる。
     /// 中継への問い合わせの間、`st` と `vstate` のロックは持たない（台本の保存を止めない）
@@ -124,7 +145,7 @@ impl Core {
                         }
                         changed = r.changed;
                         if first && r.missing > 0 {
-                            self.toast_error(&format!("{} 行の音声の長さを VoiSona から受け取れませんでした", r.missing), 9000);
+                            self.toast_error(&format!("{} 行の音声の長さを声のエンジンから受け取れませんでした", r.missing), 9000);
                         }
                         if r.old_server {
                             self.toast_error(analysis::OLD_SERVER, 12000);
@@ -141,7 +162,7 @@ impl Core {
                             std::mem::replace(&mut v.last_err, msg.clone()) == msg
                         };
                         if up && !same {
-                            self.toast_err("VoiSona で台本を解析できませんでした", &e, 9000);
+                            self.toast_err("声のエンジンで台本を解析できませんでした", &e, 9000);
                         }
                     }
                 }

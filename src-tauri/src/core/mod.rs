@@ -74,7 +74,7 @@ pub struct Core {
     pub vstate: RwLock<VoiceState>,
     /// 並べ直し（`refresh_voice`）を 1 つずつにする。`st`・`vstate` より先に取り、持ったまま中継に問い合わせる
     voice_lock: Mutex<()>,
-    /// VoiSona の中継が起きているか（起きる前の解析の失敗は知らせない）
+    /// 声の中継が起きているか（起きる前の解析の失敗は知らせない）
     voice_up: AtomicBool,
     /// 書き出しの間だけ Some。合成・ミックスで飛ばしたもの（読めない素材・字幕の失敗など）を集めて、結果の警告に出す
     pub export_issues: Mutex<Option<Vec<(String, usize)>>>,
@@ -375,7 +375,7 @@ impl Core {
             self.notice_err("録画の差し込みの印を演出の調整に書けませんでした", &e);
         }
         self.watch(&root);
-        // VoiSona の中継は裏で起動（時間がかかることがある）
+        // 声の中継は裏で起動（時間がかかることがある）
         let me = self.clone();
         let root2 = root.clone();
         std::thread::spawn(move || {
