@@ -1,7 +1,7 @@
 // 読み上げ辞書（voice_dict.json）の登録の決まりの確かめ
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cleanReading, flatHl, guessReading, moras, setMora, upsertEntry } from "../src/logic/dict.ts";
+import { cleanReading, flatHl, guessReading, moras, setMora, savedAccent, upsertEntry } from "../src/logic/dict.ts";
 
 test("読みはカタカナにして、記号などは落とす", () => {
   assert.equal(cleanReading("しぐれ"), "シグレ");
@@ -43,4 +43,18 @@ test("登録は同じ表記を置き換え、表記を変えた編集は元の�
   assert.deepEqual(upsertEntry([e("A"), e("B"), e("C")], e("X"), "B").map((x) => x.surface), ["A", "X", "C"]);
   // 新しい表記がほかの項目と同じなら、それも置き換えて 1 つにする
   assert.deepEqual(upsertEntry([e("A"), e("B"), e("C")], e("C"), "A").map((x) => x.surface), ["C", "B"]);
+});
+
+test("アクセントを扱えないエンジンで保存しても、辞書の既存のアクセントは落とさない", () => {
+  const old = { surface: "時雨", reading: "シグレ", accent: "lhh" };
+  // 扱えないエンジン: 読みのモーラ数が同じなら残す（読みを少し変えても残る）
+  assert.equal(savedAccent(old, "シグレ", { canAccent: false, useAcc: true, acc: "hll" }), "lhh");
+  assert.equal(savedAccent(old, "シクレ", { canAccent: false, useAcc: false, acc: "" }), "lhh");
+  // モーラ数が変わったら合わないので省く。もともと無い項目にも付けない
+  assert.equal(savedAccent(old, "シグレー", { canAccent: false, useAcc: true, acc: "lhhh" }), undefined);
+  assert.equal(savedAccent({ surface: "時雨", reading: "シグレ" }, "シグレ", { canAccent: false, useAcc: true, acc: "lhh" }), undefined);
+  assert.equal(savedAccent(undefined, "シグレ", { canAccent: false, useAcc: true, acc: "lhh" }), undefined);
+  // 扱えるエンジン: 今までどおり（使うときだけ入力のアクセント）
+  assert.equal(savedAccent(old, "シグレ", { canAccent: true, useAcc: true, acc: "hll" }), "hll");
+  assert.equal(savedAccent(old, "シグレ", { canAccent: true, useAcc: false, acc: "hll" }), undefined);
 });

@@ -10,7 +10,7 @@ import { findLine, setVoice, spVoice, subText, ttsText, voicedLines, voiceOf } f
 import { engineOf, has } from "../logic/voiceengine";
 import { canRuby, wrapRuby } from "../logic/ruby";
 import { Dialog } from "./TopBar";
-import { cleanReading, flatHl, guessReading, moras, setMora, upsertEntry, type DictEntry } from "../logic/dict";
+import { cleanReading, flatHl, guessReading, moras, savedAccent, setMora, upsertEntry, type DictEntry } from "../logic/dict";
 
 interface DictState {
   entries: DictEntry[] | null;
@@ -209,7 +209,9 @@ function DictEditor() {
       return null;
     }
     const entry: DictEntry = { surface: sf, reading: rd };
-    if (useAcc && canAccent) entry.accent = acc;
+    // アクセントを扱えないエンジンで保存しても、共通の辞書にある既存のアクセントは残す
+    const accent = savedAccent(entries?.find((x) => x.surface === (edit?.surface ?? sf)), rd, { canAccent, useAcc, acc });
+    if (accent) entry.accent = accent;
     return entry;
   };
   // 保存せずに、この言葉だけを今の入力で作って鳴らす（右クリックした行の話者の声。なければ トーク1）

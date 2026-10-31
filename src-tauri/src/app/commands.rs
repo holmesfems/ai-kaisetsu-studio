@@ -59,7 +59,9 @@ pub async fn script_peek(core: C<'_>, path: String) -> R<Script> {
             return Err(coded(ErrorCode::BadInput, "今開いている回です").into());
         }
     }
-    bg(move || crate::script::peek(&dir.join("script"))).await
+    // 話者の声は、今の声のエンジンのファイルから読む（取り込みで写す先と同じ単位）
+    let file = crate::script::speakers_file(&core.settings.get().voice_engine);
+    bg(move || crate::script::peek(&dir.join("script"), &file)).await
 }
 
 #[tauri::command]

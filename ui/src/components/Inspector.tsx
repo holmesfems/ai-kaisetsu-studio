@@ -367,7 +367,7 @@ function SubStyleFields({ style, base, onPatch, inheritFont }: {
 /** スタイルの帯の色（VoiSona の円グラフに近い色。スタイルの順） */
 const STYLE_COLORS = ["#2ac6cc", "#b04a58", "#a8243a", "#9a9420", "#3438a8", "#2f8f5a", "#a0602a", "#7a4aa8"];
 
-/** トークトラックの話者の声（声のエンジンの話者の値とスタイルの重み）。_voice_speakers.json に保存 */
+/** トークトラックの話者の声（声のエンジンの話者の値とスタイルの重み）。script/ の下のエンジンごとのファイル（_voice_speakers*.json）に保存 */
 function SpeakerVoiceFields({ sp }: { sp: string }) {
   const over = useS((s) => s.script?.speakers?.[sp]);
   const hasScript = useS((s) => !!s.script);
@@ -394,7 +394,7 @@ function SpeakerVoiceFields({ sp }: { sp: string }) {
     <>
       {note(<>
         {sp} のすべてのセリフの声です（声のエンジン（{engine.label}）の話者の値）。共通のプリセットから変更した項目を、この回の
-        script/_voice_speakers.json に保存します。変更すると {sp} の音声を作り直します。セリフごとに抑揚を変えた行は、そちらが優先されます。
+        script/{info?.file ?? "_voice_speakers.json"} に保存します。変更すると {sp} の音声を作り直します。セリフごとに抑揚を変えた行は、そちらが優先されます。
       </>)}
       {fields.map((p) => (
         <div key={p.key} title={p.abbr ? `${p.abbr}: ${p.tip}` : p.tip}>

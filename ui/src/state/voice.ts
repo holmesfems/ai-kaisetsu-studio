@@ -133,8 +133,8 @@ export const OLD_SERVER =
 /** voice_server から、話者ごとのプリセットの声とスタイルの名前を読む */
 export async function loadSpeakersInfo() {
   try {
-    const r = await voiceApi<{ speakers: Record<string, SpeakerInfo>; range?: Record<string, unknown> }>("/api/speakers");
-    set({ speakersInfo: { speakers: r.speakers, range: r.range } });
+    const r = await voiceApi<{ speakers: Record<string, SpeakerInfo>; range?: Record<string, unknown>; file?: string }>("/api/speakers");
+    set({ speakersInfo: { speakers: r.speakers, range: r.range, file: r.file } });
   } catch (e) {
     const a = toApiError(e);
     set({ speakersInfo: { error: a.code === "not_found" ? OLD_SERVER : a.message } });

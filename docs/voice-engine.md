@@ -6,7 +6,7 @@ AK Studio は、声を作るソフト（声のエンジン）を差し替えら�
 ## しくみ
 
 アプリは声を直接作らず、裏で動かす **声の中継**（`voice/voice_server.py`、`127.0.0.1:8765`）に頼む。
-中継は、どのエンジンでも同じ仕事（回の切り替え・声のキャッシュ `voice_cache/`・声のつなぎ `voice_out/`・話者ごとの調整 `_voice_speakers.json`・読みの辞書）を受け持ち、
+中継は、どのエンジンでも同じ仕事（回の切り替え・声のキャッシュ `voice_cache/`・声のつなぎ `voice_out/`・話者ごとの調整（エンジンごとのファイル。下の「話者の声のファイル」）・読みの辞書）を受け持ち、
 1 行の声を作るところだけを **エンジンのモジュール** に任せる。
 
 ```
@@ -64,11 +64,11 @@ def synthesize(speaker, text, out_path, presets, analyzed_text, entries, params)
 - `presets["speakers"][speaker]` は `{"voice_name": 画面に出す名前, "global_parameters": {RANGES の項目: 値}, …}`。ほかの項目（VOICEVOX の `style_id` など）はエンジンが自由に足してよい。`presets["pauses"]` は句読点の間（秒）
 - `entries` はその文に関わる読みの辞書の項目（`{"surface", "reading", "accent"?}`）。読みの置き換えは `voicecommon.apply_reading(text, entries)` で
 - 読めない・入口が欠けている・版が違うエンジンは、中継が起動時に理由を出して止まる（画面に出る）
-- 中継の `/api/ping` の `engine`（`name`・`label`・`features`・`api`、ファイルで読んだときは `path`）で、読み込まれたエンジンを確かめられる
+- 中継の `/api/ping` の `engine`（`name`・`label`・`features`・`api`、ファイルで読んだときは `path`（resolve 後）と `arg`（`--engine` に与えた値のまま。アプリは設定の文字列とこの `arg` を比べる））で、読み込まれたエンジンを確かめられる
 
 ## 自作のエンジンを足す
 
-1. `voice/voicevox_tts.py` を写して、`NAME`・`LABEL`・`PRESETS` と `check`・`synthesize` を自分のエンジンに合わせて書き換える（標準ライブラリだけで書くと、Python に何も足さずに動く）
+1. `voice/voicevox_tts.py` を写して、`NAME`・`LABEL`・`PRESETS` と `check`・`synthesize` を自分のエンジンに合わせて書き換える。**`NAME` は `voisona`・`voicevox` 以外の名前に変えること**（同じ名前だと音声キャッシュの鍵や話者の声のファイルが組み込みのエンジンと混ざるので、中継が理由を出して止まる）（標準ライブラリだけで書くと、Python に何も足さずに動く）
 2. 同じフォルダに話者のプリセット（`PRESETS` の名前の JSON。形は `voice/voicevox_presets.json`）を置く
 3. ⚙ 設定の「声のエンジン」で「ファイルを指定…」を選び、その `.py` の絶対パスを入れて保存する
 4. 上の帯の丸がそのエンジンの `LABEL` になり、緑になれば使える。赤なら押すと理由が出る
@@ -80,6 +80,19 @@ def synthesize(speaker, text, out_path, presets, analyzed_text, entries, params)
 ```
 python voice/voice_server.py --project <回のフォルダ> --engine <自作の .py>
 ```
+
+## 話者の声のファイル
+
+話者ごとの声（トークトラックの ⚙）は、声の単位がエンジンで違う（VoiSona の音量 dB・音高 cent と、VOICEVOX の音量・音高の倍率など）ので、エンジンごとに別のファイルに持つ。回の `script/` に、
+
+| エンジン | ファイル |
+|---|---|
+| VoiSona | `_voice_speakers.json`（今までのまま） |
+| VOICEVOX | `_voice_speakers.voicevox.json` |
+| ファイルで読んだエンジン | `_voice_speakers.<.py の名前から拡張子を除いたもの>.json`（英数字・`_`・`-` 以外は落とし、空なら `custom`） |
+
+エンジンを切り替えると、アプリは新しいエンジンのファイルから読み直す（前のエンジンの値は持ち越さない。戻せばまた使える）。
+決め方は中継（`voice_server.speakers_file_name`）とアプリ（`script::speakers_file`）で同じ。ほかの回から台本を取り込むときの「話者の声」も、今のエンジンのファイルから写す。
 
 ## アクセントの手直しについて
 

@@ -39,7 +39,9 @@ ENGINE_API = 1
 REQUIRED = ("ENGINE_API", "NAME", "LABEL", "FEATURES", "PRESETS", "RANGES", "check", "voice_info", "synthesize")
 ENGINE = None      # 読んだエンジンのモジュール
 ENGINE_DIR = TOOLS  # エンジンのファイルのあるフォルダ（プリセットはここの ENGINE.PRESETS）
-ENGINE_PATH = None  # .py のパスで読んだときだけ、そのパス（ping に出す）
+ENGINE_PATH = None  # .py のパスで読んだときだけ、そのパス（resolve 済み。ping に出す）
+ENGINE_ARG = None   # .py のパスで読んだときだけ、--engine に与えられた値のまま（ping に出す。本体が設定と比べる）
+BUILTIN_ENGINES = ("voisona", "voicevox")  # 組み込みのエンジンの名前。パスで読むエンジンの NAME には使えない
 
 
 def engine_fail(msg):
@@ -49,7 +51,7 @@ def engine_fail(msg):
 
 def load_engine(value):
     """--engine の値（名前か .py のパス）からエンジンを読み、入口を確かめる。だめなら理由を出して sys.exit(2)。"""
-    global ENGINE, ENGINE_DIR, ENGINE_PATH
+    global ENGINE, ENGINE_DIR, ENGINE_PATH, ENGINE_ARG
     value = (value or "voisona").strip()
     try:
         if value.lower().endswith(".py"):
@@ -77,9 +79,12 @@ def load_engine(value):
         engine_fail(f"{value} の約束の版（ENGINE_API={mod.ENGINE_API}）に対応していません（対応は {ENGINE_API}）")
     if not isinstance(mod.NAME, str) or not re.fullmatch(r"[a-z0-9_]+", mod.NAME):
         engine_fail(f"{value} の NAME は英小文字・数字・_ だけにしてください: {mod.NAME!r}")
+    if ep and mod.NAME in BUILTIN_ENGINES:
+        # 同じ NAME だと、音声キャッシュの鍵・話者の声のファイルが組み込みのエンジンと混ざる
+        engine_fail(f"{value} の NAME（{mod.NAME}）は組み込みのエンジンの名前です。別の名前にしてください（{'・'.join(BUILTIN_ENGINES)} 以外）")
     if not (folder / mod.PRESETS).is_file():
         engine_fail(f"話者のプリセット（{mod.PRESETS}）がありません: {folder}")
-    ENGINE, ENGINE_DIR, ENGINE_PATH = mod, folder, ep
+    ENGINE, ENGINE_DIR, ENGINE_PATH, ENGINE_ARG = mod, folder, ep, (value if ep else None)
     return mod
 
 
@@ -98,6 +103,7 @@ def engine_info():
     info = {"name": ENGINE.NAME, "label": ENGINE.LABEL, "features": sorted(features()), "api": ENGINE_API}
     if ENGINE_PATH:
         info["path"] = ENGINE_PATH
+        info["arg"] = ENGINE_ARG or ENGINE_PATH
     return info
 
 
@@ -132,7 +138,7 @@ def switch_project(body):
 def ping():
     try:
         presets = episode_presets()
-    except ValueError:  # _voice_speakers.json が書きかけでも、つながっていることは返す
+    except ValueError:  # 話者の声のファイルが書きかけでも、つながっていることは返す
         presets = load_presets()
     return {"ok": True, "project": PROJECT.name, "path": str(PROJECT), "dict": str(vc.dict_path()), "projects": projects(),
             "engine": engine_info(), "speakers": list(presets["speakers"]),
@@ -140,13 +146,37 @@ def ping():
                            for sp, v in presets["speakers"].items()}}
 
 
-# ---------- 回ごとの話者の声（<回>/script/_voice_speakers.json。AK Studio のトークトラックの ⚙ で決める） ----------
-SPEAKERS = "_voice_speakers.json"
+# ---------- 回ごとの話者の声（<回>/script/_voice_speakers*.json。AK Studio のトークトラックの ⚙ で決める） ----------
+# 声の単位がエンジンで違う（VoiSona の音量 dB と VOICEVOX の倍率など）ので、エンジンごとに別のファイルに持つ
+SPEAKERS = "_voice_speakers.json"  # voisona のファイル（今までのまま）
+
+
+def speakers_file_name(name, path=None):
+    """話者の声のファイル名。voisona は _voice_speakers.json、ほかは _voice_speakers.<名前>.json。
+    名前は、.py のパスで読んだエンジンならそのファイル名の拡張子を除いた部分、組み込みならエンジンの名前。
+    英数字・_・- 以外は落とし、空なら custom。AK Studio（script/store.rs の speakers_file）と同じ規則"""
+    if path is None and name == "voisona":
+        return SPEAKERS
+    stem = name
+    if path is not None:
+        stem = path.replace("\\", "/").rsplit("/", 1)[-1]
+        if stem.lower().endswith(".py"):
+            stem = stem[:-3]
+    stem = "".join(c for c in stem if c.isascii() and (c.isalnum() or c in "_-")) or "custom"
+    return f"_voice_speakers.{stem}.json"
+
+
+def speakers_file():
+    """読み込んでいるエンジンの話者の声のファイル名。"""
+    if ENGINE_PATH:
+        return speakers_file_name(ENGINE.NAME, ENGINE_ARG or ENGINE_PATH)
+    return speakers_file_name(ENGINE.NAME)
 
 
 def speaker_overrides():
     """{話者: {"speed": …, "style_weights": […]}}。無ければ {}。読めなければ（書きかけなど）エラー。"""
-    path = PROJECT / "script" / SPEAKERS
+    fname = speakers_file()
+    path = PROJECT / "script" / fname
     if not path.exists():
         return {}
     text = path.read_text(encoding="utf-8-sig").strip()
@@ -155,7 +185,7 @@ def speaker_overrides():
     try:
         d = json.loads(text)
     except ValueError:
-        raise ValueError(f"{SPEAKERS} が読めません（書きかけかもしれません）") from None
+        raise ValueError(f"{fname} が読めません（書きかけかもしれません）") from None
     return d if isinstance(d, dict) else {}
 
 
@@ -179,7 +209,7 @@ def episode_presets():
 def presets_for(item, base=None):
     """1 行分のプリセットと、その話者の声（調整を重ねた global_parameters）。
 
-    item に speaker_params（AK Studio が送る、その話者の調整）があればそれを使い、無ければ _voice_speakers.json。
+    item に speaker_params（AK Studio が送る、その話者の調整）があればそれを使い、無ければ今のエンジンの話者の声のファイル。
     """
     base = base or load_presets()
     sp = item.get("speaker")
@@ -210,7 +240,7 @@ def speakers_info():
             gp["style_weights"] = info["default_style_weights"]
         out[sp] = {"voice_name": p.get("voice_name", ""), "base": gp, "style_names": names, "style_labels": labels,
                    "override": over.get(sp) or {}, "error": err}
-    return {"speakers": out, "range": ENGINE.RANGES, "file": SPEAKERS}
+    return {"speakers": out, "range": ENGINE.RANGES, "file": speakers_file()}
 
 
 # ---------- アクセントのレビュー（accent_review.html と voice_review.py） ----------

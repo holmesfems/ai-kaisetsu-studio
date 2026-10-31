@@ -49,6 +49,21 @@ export function guessReading(
   return { reading: "", accent: "" };
 }
 
+/**
+ * 保存する項目の accent。辞書は全部のエンジンで共通なので、アクセントを扱えないエンジン（canAccent が false）で
+ * 保存しても、既にあるアクセントを落とさない（読みのモーラ数が同じときだけ。変わったら合わなくなるので省く）。
+ * 扱えるエンジンでは、アクセントを使う（useAcc）ときだけ acc を入れる
+ */
+export function savedAccent(
+  existing: DictEntry | undefined,
+  reading: string,
+  o: { canAccent: boolean; useAcc: boolean; acc: string },
+): string | undefined {
+  if (o.canAccent) return o.useAcc ? o.acc : undefined;
+  const old = existing?.accent;
+  return old && old.length === moras(reading).length ? old : undefined;
+}
+
 /** 登録・編集（表記を変えたときは元の表記の項目と置き換え、元の位置に置く） */
 export function upsertEntry(entries: DictEntry[], entry: DictEntry, prevSurface: string): DictEntry[] {
   const at = entries.findIndex((x) => (prevSurface && x.surface === prevSurface) || x.surface === entry.surface);

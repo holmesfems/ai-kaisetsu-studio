@@ -60,16 +60,16 @@ class Swap:
     """テストの間だけ、中継の ENGINE・プロジェクトを差し替える。"""
 
     def __enter__(self):
-        self.saved = (vs.ENGINE, vs.ENGINE_DIR, vs.ENGINE_PATH, vs.PROJECT, vs.CACHE, vs.OUT)
+        self.saved = (vs.ENGINE, vs.ENGINE_DIR, vs.ENGINE_PATH, vs.ENGINE_ARG, vs.PROJECT, vs.CACHE, vs.OUT)
         return self
 
     def __exit__(self, *a):
-        vs.ENGINE, vs.ENGINE_DIR, vs.ENGINE_PATH, vs.PROJECT, vs.CACHE, vs.OUT = self.saved
+        vs.ENGINE, vs.ENGINE_DIR, vs.ENGINE_PATH, vs.ENGINE_ARG, vs.PROJECT, vs.CACHE, vs.OUT = self.saved
 
 
-def write_engine(folder, api=1, presets=True, body=None):
+def write_engine(folder, api=1, presets=True, body=None, name="fake"):
     py = Path(folder) / "fake_tts.py"
-    py.write_text(body or FAKE.format(api=api), encoding="utf-8")
+    py.write_text(body or FAKE.format(api=api).replace('NAME = "fake"', f'NAME = "{name}"'), encoding="utf-8")
     if presets:
         (Path(folder) / "fake_presets.json").write_text(json.dumps(PRESETS), encoding="utf-8")
     return py
@@ -114,12 +114,85 @@ def test_load_engine_path_and_ping():
         (proj / "script").mkdir(parents=True)
         vs.PROJECT = proj
         info = vs.ping()["engine"]
-        assert info == {"name": "fake", "label": "偽のエンジン", "features": [], "api": 1, "path": str(py.resolve())}
+        assert info == {"name": "fake", "label": "偽のエンジン", "features": [], "api": 1, "path": str(py.resolve()),
+                        "arg": str(py)}
         assert vs.speakers_info()["range"] == {"speed": (0.5, 2.0)}
         vs.load_engine("voisona")
         info = vs.ping()["engine"]
         assert info["name"] == "voisona" and "path" not in info and info["api"] == 1
         assert info["features"] == ["accent", "durations", "intonation", "styles"]
+
+
+def test_path_engine_cannot_reuse_builtin_name():
+    """パスで読むエンジンの NAME が組み込みの名前だと、音声キャッシュや話者の声のファイルが混ざるので読まない。"""
+    with tempfile.TemporaryDirectory() as d, Swap():
+        for name in ("voisona", "voicevox"):
+            py = write_engine(d, name=name)
+            reason = fail_reason(lambda: vs.load_engine(str(py)))
+            assert "組み込みのエンジンの名前" in reason and name in reason, reason
+            assert vs.ENGINE.NAME == "voisona" and vs.ENGINE_PATH is None  # 失敗しても、読んでいたエンジンはそのまま
+        write_engine(d, name="voisona_custom")
+        assert vs.load_engine(str(Path(d) / "fake_tts.py")).NAME == "voisona_custom"
+
+
+def test_ping_arg_is_the_value_as_given():
+    """ping の engine.arg は --engine の値のまま（path は resolve 後。設定の文字列との比較は arg で行う）。"""
+    with tempfile.TemporaryDirectory() as d, Swap():
+        sub = Path(d) / "sub"
+        sub.mkdir()
+        write_engine(d)
+        raw = str(sub / ".." / "fake_tts.py")
+        vs.load_engine(raw)
+        info = vs.engine_info()
+        assert info["arg"] == raw and info["path"] == str(Path(raw).resolve()) and info["arg"] != info["path"]
+        vs.load_engine("voisona")
+        assert "arg" not in vs.engine_info()
+
+
+def test_speakers_file_names():
+    f = vs.speakers_file_name
+    assert f("voisona") == "_voice_speakers.json"
+    assert f("voicevox") == "_voice_speakers.voicevox.json"
+    assert f("fake", r"D:\Engines\My_TTS.py") == "_voice_speakers.My_TTS.json"
+    assert f("fake", "D:/e/my-tts.PY") == "_voice_speakers.my-tts.json"
+    assert f("fake", "D:/e/my tts(2).py") == "_voice_speakers.mytts2.json"
+    assert f("fake", "D:/e/読み上げ.py") == "_voice_speakers.custom.json"
+    # AK Studio（Rust の script::store::speakers_file）と同じ規則: 同じ入力は同じファイル名
+    assert f("voisona", "voisona") == "_voice_speakers.voisona.json"  # path を渡した（.py）ときは名前を見ない
+    with tempfile.TemporaryDirectory() as d, Swap():
+        vs.load_engine("voisona")
+        assert vs.speakers_file() == "_voice_speakers.json"
+        vs.load_engine("voicevox")
+        assert vs.speakers_file() == "_voice_speakers.voicevox.json"
+        py = write_engine(d)
+        vs.load_engine(str(py))
+        assert vs.speakers_file() == "_voice_speakers.fake_tts.json"
+
+
+def test_speakers_are_per_engine():
+    """話者の声はエンジンごとのファイル。切り替えても単位の違う値を持ち越さない。"""
+    with tempfile.TemporaryDirectory() as d, Swap():
+        proj = Path(d) / "ep"
+        (proj / "script").mkdir(parents=True)
+        (proj / "script" / "_voice_speakers.json").write_text('{"トーク1": {"volume": -3.0}}', encoding="utf-8")
+        (proj / "script" / "_voice_speakers.voicevox.json").write_text('{"トーク1": {"volume": 1.2}}', encoding="utf-8")
+        vs.PROJECT = proj
+        vs.load_engine("voisona")
+        assert vs.speaker_overrides()["トーク1"]["volume"] == -3.0
+        assert vs.speakers_info()["file"] == "_voice_speakers.json"
+        vs.load_engine("voicevox")
+        assert vs.speaker_overrides()["トーク1"]["volume"] == 1.2
+        assert vs.speakers_info()["file"] == "_voice_speakers.voicevox.json"
+        py = write_engine(d)
+        vs.load_engine(str(py))
+        assert vs.speaker_overrides() == {}  # 別のエンジンのファイルは読まない
+        assert vs.speakers_info()["file"] == "_voice_speakers.fake_tts.json"
+        (proj / "script" / "_voice_speakers.fake_tts.json").write_text('{"トーク1": ', encoding="utf-8")
+        try:
+            vs.speaker_overrides()
+            raise AssertionError("書きかけのファイルはエラーにする")
+        except ValueError as e:
+            assert "_voice_speakers.fake_tts.json" in str(e)
 
 
 def test_effective_and_synth_drop_unsupported():

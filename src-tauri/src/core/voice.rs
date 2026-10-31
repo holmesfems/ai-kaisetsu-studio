@@ -89,11 +89,13 @@ impl Core {
     pub fn restart_voice_for_engine(&self) {
         self.voice.stop();
         let Some(root) = self.root() else { return };
+        // 話者の声はエンジンごとのファイル（単位が違う）。新しいエンジンのファイルから読み直す
+        self.sync_speakers_file();
         // 前のエンジンの長さ・音素で並べたままにしない（sig はエンジンを見ないので、捨てないと取り直されない）
         self.vstate.write().reset();
         self.voice_up.store(false, Ordering::SeqCst);
         self.refresh_voice(false);
-        match self.voice.ensure(&self.settings.get(), &root) {
+        match self.voice.ensure_with(|| self.settings.get(), &root) {
             Ok(p) => {
                 self.emit("voice", serde_json::json!({"ok": true, "info": p}));
                 self.voice_relay_up(&root);
@@ -102,6 +104,21 @@ impl Core {
                 let a = crate::app::error::api_error(&e);
                 self.emit("voice", serde_json::json!({"ok": false, "error": a.message, "code": a.code, "detail": a.detail}));
             }
+        }
+    }
+
+    /// 今の声のエンジンの話者の声のファイルに台本の話者の声を合わせ、変わったら画面に台本を配る
+    pub(crate) fn sync_speakers_file(&self) {
+        let file = crate::script::speakers_file(&self.settings.get().voice_engine);
+        let r = {
+            let mut st = self.st.write();
+            let Some(store) = st.as_mut().and_then(|p| p.script.as_mut()) else { return };
+            store.set_speakers_file(&file).map(|changed| changed.then(|| serde_json::to_value(&store.script).unwrap_or(serde_json::Value::Null)))
+        };
+        match r {
+            Ok(Some(s)) => self.emit("script", serde_json::json!({"script": s, "external": false})),
+            Ok(None) => {}
+            Err(e) => self.notice_err("声のエンジンの話者の声の設定を読み込めませんでした（前のエンジンの値のままです）", &e),
         }
     }
 

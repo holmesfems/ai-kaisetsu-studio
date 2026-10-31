@@ -13,7 +13,7 @@ voice: { [key in string]: VoiceAdj },
  */
 params: { [key in string]: ParamsAdj }, 
 /**
- * `_voice_speakers.json`（キー: 話者。値: VoiSona の global_parameters のうち、共通のプリセットから変えた項目）。
+ * `_voice_speakers.json`（VoiSona。ほかのエンジンは `_voice_speakers.<名前>.json`。`speakers_file`）（キー: 話者。値: VoiSona の global_parameters のうち、共通のプリセットから変えた項目）。
  * 保存のときに無ければ（None）、ディスクの中身をそのまま残す
  */
 speakers?: Record<string, import("../logic/speakervoice.ts").SpeakerVoice>, 

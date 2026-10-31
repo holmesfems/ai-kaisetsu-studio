@@ -39,9 +39,23 @@ impl Voice {
             .and_then(|r| r.into_json().ok())
     }
 
+    /// ensure_lock を取ってから設定を読む（順番が逆だと、ロックを待つ間に変わった設定を見落とす）
+    fn lock_and_settings(&self, get_settings: impl Fn() -> Settings) -> (parking_lot::MutexGuard<'_, ()>, Settings) {
+        let guard = self.ensure_lock.lock();
+        let s = get_settings();
+        (guard, s)
+    }
+
     /// 起動（もう動いていれば、その回に切り替えるだけ）。
     pub fn ensure(&self, s: &Settings, project: &Path) -> Result<Value> {
-        let _one = self.ensure_lock.lock();
+        self.ensure_with(|| s.clone(), project)
+    }
+
+    /// `ensure` の、設定を ensure_lock を取ってから読む版。回を開く裏のスレッドと設定の変更（声のエンジンの切り替え）が
+    /// 重なったとき、ロックを待つ間に古くなった設定で起動し直して、切り替えを元に戻さないため
+    pub fn ensure_with(&self, get_settings: impl Fn() -> Settings, project: &Path) -> Result<Value> {
+        let (_one, s) = self.lock_and_settings(get_settings);
+        let s = &s;
         *self.port.lock() = s.voice_port;
         let name = project.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
         if let Some(p) = self.ping() {
@@ -206,7 +220,9 @@ impl Voice {
 }
 
 /// 動いている中継（ping の返事）が、設定の声のエンジンで動いているか。
-/// 名前のエンジンは `engine.name`、パスのエンジンは `engine.path`（区切り・大文字小文字は見ない。Windows）を比べる。
+/// 名前のエンジンは `engine.name`、パスのエンジンは `engine.arg`（中継を起こしたときの --engine の値のまま。
+/// resolve した `engine.path` は 8.3 名・`..`・ジャンクションで設定の文字列と合わないことがある。`arg` が無い中継は `path`）を比べる
+/// （区切り・大文字小文字・先頭の `\?\` は見ない。Windows）。
 /// `engine` を返さない古い中継は voisona として動いている
 pub(crate) fn engine_matches(ping: &Value, s: &Settings) -> bool {
     fn norm(p: &str) -> String {
@@ -220,7 +236,7 @@ pub(crate) fn engine_matches(ping: &Value, s: &Settings) -> bool {
         // パスで読んだエンジンの NAME がたまたま同じでも、名前で選んだものとは別（path があれば不一致）
         return e["path"].as_str().is_none() && e["name"].as_str().unwrap_or("voisona") == want;
     }
-    e["path"].as_str().is_some_and(|rp| norm(rp) == norm(want))
+    e["arg"].as_str().or(e["path"].as_str()).is_some_and(|rp| norm(rp) == norm(want))
 }
 
 /// 動いている中継の声のエンジンの見せ方（エラー文用）
@@ -288,6 +304,45 @@ mod tests {
         // パスの設定に、名前だけ（path 無し）の中継は合わない
         assert!(!engine_matches(&json!({"engine": {"name": "mine"}}), &st("D:/Engines/My_TTS.py")));
         assert!(!engine_matches(&json!({"ok": true}), &st("D:/Engines/My_TTS.py")));
+    }
+
+    #[test]
+    fn settings_are_read_after_taking_the_lock() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+        use std::time::Duration;
+        let voice = Arc::new(super::Voice::new());
+        let engine = Arc::new(parking_lot::Mutex::new("voisona".to_string()));
+        let called = Arc::new(AtomicBool::new(false));
+        let guard = voice.ensure_lock.lock(); // 別のスレッドの ensure が動いている間
+        let t = {
+            let (voice, engine, called) = (voice.clone(), engine.clone(), called.clone());
+            std::thread::spawn(move || {
+                let (_g, s) = voice.lock_and_settings(|| {
+                    called.store(true, Ordering::SeqCst);
+                    st(&engine.lock())
+                });
+                s.voice_engine
+            })
+        };
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(!called.load(Ordering::SeqCst), "ロックを取る前に設定を読んだ");
+        *engine.lock() = "voicevox".into(); // 待っている間に声のエンジンが変わった
+        drop(guard);
+        assert_eq!(t.join().unwrap(), "voicevox"); // 待った後の（新しい）設定で動く
+    }
+
+    #[test]
+    fn engine_matches_by_arg_when_path_is_resolved() {
+        // path は resolve 後（8.3 名が長い名前になる・.. が消える）で、設定の文字列と合わない。arg は与えた値のまま
+        let ping = json!({"engine": {"name": "mine", "path": r"C:\Users\holmesfems\e\my_tts.py", "arg": r"C:\Users\HOLMES~1\x\..\e\my_tts.py"}});
+        assert!(engine_matches(&ping, &st(r"C:\Users\HOLMES~1\x\..\e\my_tts.py")));
+        assert!(engine_matches(&ping, &st("C:/Users/HOLMES~1/x/../e/my_tts.py")));
+        // arg があれば path とは比べない
+        assert!(!engine_matches(&ping, &st(r"C:\Users\holmesfems\e\my_tts.py")));
+        // \?\ の接頭辞は見ない
+        let ping = json!({"engine": {"name": "mine", "path": "x", "arg": r"\\?\D:\e\a.py"}});
+        assert!(engine_matches(&ping, &st("D:/e/a.py")));
     }
 
     #[test]

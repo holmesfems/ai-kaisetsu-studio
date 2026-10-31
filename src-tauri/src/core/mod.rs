@@ -335,7 +335,7 @@ impl Core {
             self.notice_detail(w.clone(), project.warning_detail.clone());
         }
         let mut script = if project.script_dir().is_dir() {
-            Some(ScriptStore::open(&project.script_dir())?)
+            Some(ScriptStore::open_with(&project.script_dir(), &crate::script::speakers_file(&self.settings.get().voice_engine))?)
         } else {
             None
         };
@@ -379,8 +379,8 @@ impl Core {
         let me = self.clone();
         let root2 = root.clone();
         std::thread::spawn(move || {
-            let s = me.settings.get();
-            match me.voice.ensure(&s, &root2) {
+            // 設定は ensure が ensure_lock を取ってから読む（待っている間に声のエンジンが変わっても、古い設定で起動し直さない）
+            match me.voice.ensure_with(|| me.settings.get(), &root2) {
                 Ok(p) => {
                     me.emit("voice", json!({"ok": true, "info": p}));
                     me.voice_relay_up(&root2);
@@ -529,7 +529,7 @@ impl Core {
         let mut st = self.st.write();
         let ps = st.as_mut().ok_or_else(crate::app::error::no_project)?;
         if ps.script.is_none() {
-            ps.script = Some(ScriptStore::open(&ps.project.script_dir())?);
+            ps.script = Some(ScriptStore::open_with(&ps.project.script_dir(), &crate::script::speakers_file(&self.settings.get().voice_engine))?);
         }
         let store = ps.script.as_mut().unwrap();
         self.emit_script_notices(store);
