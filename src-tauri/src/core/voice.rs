@@ -94,6 +94,7 @@ impl Core {
         // 前のエンジンの長さ・音素で並べたままにしない（sig はエンジンを見ないので、捨てないと取り直されない）
         self.vstate.write().reset();
         self.voice_up.store(false, Ordering::SeqCst);
+        self.engine_switched.store(true, Ordering::SeqCst);
         self.refresh_voice(false);
         match self.voice.ensure_with(|| self.settings.get(), &root) {
             Ok(p) => {
@@ -161,8 +162,14 @@ impl Core {
                             v.last_err.clear();
                         }
                         changed = r.changed;
+                        // エンジンを切り替えた直後は、新しいエンジンの声がまだ無いのが当たり前なので、失敗ではなく案内にする
+                        let switched = self.engine_switched.swap(false, Ordering::SeqCst);
                         if first && r.missing > 0 {
-                            self.toast_error(&format!("{} 行の音声の長さを声のエンジンから受け取れませんでした", r.missing), 9000);
+                            if switched {
+                                self.emit("toast", json!({"text": missing_after_switch(r.missing), "kind": "info", "ms": 8000}));
+                            } else {
+                                self.toast_error(&format!("{} 行の音声の長さを声のエンジンから受け取れませんでした", r.missing), 9000);
+                            }
                         }
                         if r.old_server {
                             self.toast_error(analysis::OLD_SERVER, 12000);
@@ -351,9 +358,20 @@ impl Core {
     }
 }
 
+/// 声のエンジンを切り替えた直後の、声がまだ無い行の案内
+fn missing_after_switch(n: usize) -> String {
+    format!("声のエンジンを切り替えました。{n} 行の声はまだこのエンジンで作っていません（「音声を一括作成」で作れます）")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_after_switch_is_guidance() {
+        let t = missing_after_switch(7);
+        assert!(t.contains("7 行") && t.contains("音声を一括作成") && !t.contains("できませんでした"), "{t}");
+    }
     use crate::script::format::{Block, Line};
     use crate::voice::key::vkey;
 

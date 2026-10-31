@@ -76,6 +76,8 @@ pub struct Core {
     voice_lock: Mutex<()>,
     /// 声の中継が起きているか（起きる前の解析の失敗は知らせない）
     voice_up: AtomicBool,
+    /// 声のエンジンを切り替えた直後（次の「声がまだ無い行」の知らせを、失敗ではなく案内にする）
+    pub(crate) engine_switched: AtomicBool,
     /// 書き出しの間だけ Some。合成・ミックスで飛ばしたもの（読めない素材・字幕の失敗など）を集めて、結果の警告に出す
     pub export_issues: Mutex<Option<Vec<(String, usize)>>>,
     emitter: Mutex<Option<Emit>>,
@@ -139,6 +141,7 @@ impl Core {
             vstate: RwLock::new(VoiceState::default()),
             voice_lock: Mutex::new(()),
             voice_up: AtomicBool::new(false),
+            engine_switched: AtomicBool::new(false),
             export_issues: Mutex::new(None),
             emitter: Mutex::new(None),
             prefetch_jobs: Mutex::new(HashMap::new()),
