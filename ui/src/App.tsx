@@ -251,7 +251,7 @@ export default function App() {
           <div className={`tab ${leftTab === "guide" ? "active" : ""}`} onClick={() => setLeftTab("guide")}>攻略</div>
         </div>
         {!project ? (
-          <div className="empty">上の「回を開く」から、回のフォルダ（an389_… など）を選んでください</div>
+          <div className="empty">上の「回を開く」から、回のフォルダ（動画 1 本ぶんのフォルダ）を選んでください</div>
         ) : leftTab === "script" ? (
           <ScriptPanel />
         ) : leftTab === "memo" ? (

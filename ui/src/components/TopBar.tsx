@@ -55,7 +55,7 @@ function ProjectPicker({ onClose }: { onClose: () => void }) {
   return (
     <Dialog title="回を開く" onClose={onClose}>
       <div className="row" style={{ marginBottom: 8 }}>
-        <input className="grow" placeholder="絞り込み（an389 / risei / 指名券…）" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
+        <input className="grow" placeholder="絞り込み（フォルダ名・題名の一部）" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
         <button
           onClick={async () => {
             const d = await openDialog({ directory: true, title: "回のフォルダを選択" });
