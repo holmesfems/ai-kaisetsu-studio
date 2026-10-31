@@ -299,7 +299,7 @@ export default function ScriptPanel() {
         <button
           onClick={() => void synthAll()}
           disabled={!!run}
-          title="音声がない行と調整後の行の音声をまとめて作成します（VoiSona）"
+          title="音声がない行と調整後の行の音声をまとめて作成します（声のエンジン）"
         >
           音声を一括作成
         </button>

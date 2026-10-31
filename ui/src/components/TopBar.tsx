@@ -6,6 +6,7 @@ import { errorMessage, failText } from "../logic/errors.ts";
 import { player } from "../io/player";
 import { splitWarnings } from "../logic/warnings.ts";
 import { settingsPatch } from "../logic/settings.ts";
+import { engineChoice, engineOf, type EngineChoice } from "../logic/voiceengine.ts";
 import { branding } from "../theme/index.ts";
 import { DriftWarning } from "./drift";
 import { ClaudeConnect } from "./ClaudeConnect.tsx";
@@ -138,16 +139,17 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
   const [orig] = useState(settings);
   // 「パスワードを削除」を押した（保存で消す）
   const [delPass, setDelPass] = useState(false);
+  const [engMode, setEngMode] = useState<EngineChoice>(engineChoice(settings?.voice_engine));
   const [dictPath, setDictPath] = useState("");
   useEffect(() => {
     call("voice_dict_path").then(setDictPath).catch((e) => setDictPath(failText("辞書の場所を取得できませんでした", e)));
   }, []);
   if (!v) return null;
-  const F = (k: string, label: string, type = "text", hint = "") => (
+  const F = (k: string, label: string, type = "text", hint = "", placeholder = "") => (
     <div className="field" style={{ gridTemplateColumns: "150px 1fr" }}>
       <label>{label}</label>
       <div className="col" style={{ gap: 2 }}>
-        <input type={type} value={v[k] ?? ""} min={NUM_RANGE[k]?.min} max={NUM_RANGE[k]?.max} step={NUM_RANGE[k]?.int ? 1 : undefined}
+        <input type={type} value={v[k] ?? ""} placeholder={placeholder || undefined} min={NUM_RANGE[k]?.min} max={NUM_RANGE[k]?.max} step={NUM_RANGE[k]?.int ? 1 : undefined}
           onChange={(e) => setV({ ...v, [k]: type === "number" ? Number(e.target.value) : e.target.value })} style={{ width: "100%" }} />
         {hint && <small className="dim2">{hint}</small>}
       </div>
@@ -157,7 +159,7 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
     <Dialog title="設定" onClose={onClose}>
       {F("an_root", "回のフォルダ", "text", "回のフォルダが並んでいる所。空欄のときは「回を開く」で選べます")}
       {F("template_dir", "ひな形のフォルダ", "text", "回のフォルダの中にあっても、回の一覧に出しません。空欄なら除外しません")}
-      {F("python", "Python", "text", "fxkit・声の中継（voice_server）を動かす Python。保存すると演出のワーカーを作り直します。声の中継には VoiSona の再起動（上の VoiSona をクリック）で反映されます")}
+      {F("python", "Python", "text", "fxkit・声の中継（voice_server）を動かす Python。保存すると演出のワーカーを作り直します。声の中継には再起動（上の「声」の丸をクリック）で反映されます")}
       {F("ffmpeg", "ffmpeg", "text", "空欄なら PATH、imageio-ffmpeg の順に探します")}
       <div className="field" style={{ gridTemplateColumns: "150px 1fr" }}>
         <label>読み上げ辞書</label>
@@ -166,8 +168,28 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
           <small className="dim2">全部の回で共通です。場所は変えられません</small>
         </div>
       </div>
-      {F("voisona_user", "VoiSona のメールアドレス")}
       <div className="field" style={{ gridTemplateColumns: "150px 1fr" }}>
+        <label>声のエンジン</label>
+        <div className="col" style={{ gap: 2 }}>
+          <select value={engMode} onChange={(e) => {
+            const m = e.target.value as EngineChoice;
+            setEngMode(m);
+            setV({ ...v, voice_engine: m === "file" ? (engineChoice(v.voice_engine) === "file" ? v.voice_engine : "") : m });
+          }}>
+            <option value="voisona">VoiSona Talk</option>
+            <option value="voicevox">VOICEVOX</option>
+            <option value="file">ファイルを指定…</option>
+          </select>
+          {engMode === "file" && (
+            <input type="text" value={v.voice_engine ?? ""} placeholder="声のエンジンの .py ファイルの場所（絶対パス）"
+              onChange={(e) => setV({ ...v, voice_engine: e.target.value })} style={{ width: "100%" }} />
+          )}
+          <small className="dim2">保存すると声の中継を作り直します</small>
+        </div>
+      </div>
+      {engMode === "voicevox" && F("voicevox_url", "VOICEVOX の場所（URL）", "text", "空欄なら http://127.0.0.1:50021 です", "http://127.0.0.1:50021")}
+      {engMode === "voisona" && F("voisona_user", "VoiSona のメールアドレス")}
+      {engMode === "voisona" && <div className="field" style={{ gridTemplateColumns: "150px 1fr" }}>
         <label>VoiSona の API パスワード</label>
         <div className="row" style={{ gap: 6 }}>
           <input type="password" value={v.voisona_pass ?? ""} autoComplete="new-password"
@@ -177,7 +199,7 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
             <button disabled={delPass} onClick={() => { setDelPass(true); setV({ ...v, voisona_pass: "" }); }}>パスワードを削除</button>
           )}
         </div>
-      </div>
+      </div>}
       {F("workers", "演出ワーカー数", "number", "多いほど速くなりますが、メモリを多く使います（1 本 300MB 前後）。再起動後に反映されます")}
       {F("cache_mb", "演出キャッシュ（MB）", "number")}
       <div className="section">CLAUDE CODE</div>
@@ -281,6 +303,8 @@ export default function TopBar() {
   const project = useS((s) => s.project);
   const engine = useS((s) => s.engine);
   const voice = useS((s) => s.voice);
+  // 丸の名前: つながったらエンジンの名前、つながる前は「声」
+  const voiceLabel = voice?.ok ? engineOf(voice.info).label : "声";
   const claude = useS((s) => s.claude);
   const progress = useS((s) => s.progress);
   const playSynthN = useS((s) => s.playSynthN);
@@ -333,20 +357,20 @@ export default function TopBar() {
       <span
         className="pill"
         style={{ cursor: "pointer" }}
-        title={voice?.error ?? "VoiSona Talk。クリックで再起動します"}
+        title={voice?.error ?? `${voiceLabel}の中継。クリックで再起動します`}
         onClick={async () => {
           try {
             const v = await call("voice_restart");
             useS.setState({ voice: { ok: true, info: v } });
-            toast("VoiSona の中継を起動しました", "ok");
+            toast("声の中継を起動しました", "ok");
           } catch (e) {
             useS.setState({ voice: { ok: false, error: errorMessage(e) } });
-            toastError("VoiSona の中継を起動できませんでした", e, 9000);
+            toastError("声の中継を起動できませんでした", e, 9000);
           }
         }}
       >
         <span className={`dot ${voice?.ok ? "ok" : voice ? "err" : ""}`} />
-        VoiSona
+        {voiceLabel}
         {playSynthN > 0 && <span className="dim2 ui">· 再生しながら音声を作成中（{playSynthN} 行）</span>}
       </span>
       <span className="pill" title={claude.api_error ? claude.api_error : claude.watching ? "Claude Code が画面からのメッセージを待っています" : claude.connected ? "Claude Code が作業中です" : "Claude Code に接続していません。Claude タブの「Claude を起動」で起動します"}>

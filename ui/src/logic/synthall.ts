@@ -1,8 +1,8 @@
 // 「音声を一括作成」の進め方（中止・エラーで止める判定と、終わったときの知らせ）。旧#32
-// store.ts から呼ぶ。VoiSona を呼ぶ部分は引数で渡すので、ここだけでテストできる
+// store.ts から呼ぶ。声のエンジンを呼ぶ部分は引数で渡すので、ここだけでテストできる
 import type { KeyLike } from "./chatcancel";
 
-/** VoiSona が止まっていると 1 行ごとに長く待つので、この回数続けて失敗したら残りはやめる */
+/** 声のエンジンが止まっていると 1 行ごとに長く待つので、この回数続けて失敗したら残りはやめる */
 export const MAX_FAILS_IN_ROW = 2;
 
 export type SynthAllResult = {

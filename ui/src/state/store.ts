@@ -73,7 +73,7 @@ export interface State {
   claude: ClaudeInfo;
   voice: { ok: boolean; error?: string; info?: any } | null;
   /** 話者ごとの声の元（voice_server の /api/speakers。読めなかったら error） */
-  speakersInfo: { speakers?: Record<string, SpeakerInfo>; error?: string } | null;
+  speakersInfo: { speakers?: Record<string, SpeakerInfo>; /** 話者の声の項目と範囲（エンジンが決める） */ range?: Record<string, unknown>; error?: string } | null;
   layout: VoiceItem[];
   voiceTotal: number;
   // 再生

@@ -86,7 +86,7 @@ export async function init() {
   on("voice", (v) => {
     set({ voice: v });
     if (v.ok) loadSpeakersInfo();
-    else toastError("VoiSona の中継を起動できませんでした", { code: v.code ?? "failed", message: v.error, detail: v.detail ?? v.error }, 9000);
+    else toastError("声の中継を起動できませんでした", { code: v.code ?? "failed", message: v.error, detail: v.detail ?? v.error }, 9000);
   });
   on("toast", (v) => toast(v.text, v.kind === "error" ? "error" : "info", v.ms ?? (v.kind === "error" ? 9000 : 4200), v.detail));
   on("progress", (p) => {

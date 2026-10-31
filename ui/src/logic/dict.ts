@@ -3,7 +3,7 @@
 export interface DictEntry {
   surface: string;
   reading: string;
-  /** 省くと VoiSona に任せる */
+  /** 省くと声のエンジンに任せる */
   accent?: string;
 }
 
@@ -29,7 +29,7 @@ export function setMora(arr: string[], j: number) {
   return arr.map((_, i) => (i >= lo && i <= hi ? "h" : "l"));
 }
 
-/** VoiSona の解析の語（word の original・pronunciation・hl）から、表記にちょうど重なる語の並びの読みとアクセントを拾う */
+/** 声のエンジンの解析の語（word の original・pronunciation・hl）から、表記にちょうど重なる語の並びの読みとアクセントを拾う */
 export function guessReading(
   words: { orig: string; pron: string; hl: string }[],
   surface: string,

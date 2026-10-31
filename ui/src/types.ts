@@ -72,7 +72,7 @@ export interface SubCheck {
   lines: Record<string, { overflow: boolean; texts: string[] }>;
 }
 
-/** VoiSona の合成結果（voice_server の /api/synth・/api/lookup のうち、画面が使う項目。Rust が持って配る） */
+/** 声のエンジンの合成結果（voice_server の /api/synth・/api/lookup のうち、画面が使う項目。Rust が持って配る） */
 export type { Analysis };
 
 export type Selection =

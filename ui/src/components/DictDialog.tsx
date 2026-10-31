@@ -1,5 +1,5 @@
 // 読み上げ辞書（アプリのデータフォルダの voice_dict.json、動画をまたいで共通）。台本の文字を選んで右クリック →「辞書に登録」。
-// 昔の台本エディタの「辞書に登録」と同じ決まり（表記・読み（カタカナ）・アクセント（モーラごとの h / l、省くと VoiSona に任せる））。
+// 昔の台本エディタの「辞書に登録」と同じ決まり（表記・読み（カタカナ）・アクセント（モーラごとの h / l、省くと声のエンジンに任せる））。
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { create } from "zustand";
@@ -7,6 +7,7 @@ import { editScript, synthLine, toast, toastError, useS, voiceApi } from "../sta
 import { player } from "../io/player";
 import { akf, call } from "../io/api";
 import { findLine, setVoice, spVoice, subText, ttsText, voicedLines, voiceOf } from "../logic/voice";
+import { engineOf, has } from "../logic/voiceengine";
 import { canRuby, wrapRuby } from "../logic/ruby";
 import { Dialog } from "./TopBar";
 import { cleanReading, flatHl, guessReading, moras, setMora, upsertEntry, type DictEntry } from "../logic/dict";
@@ -26,7 +27,7 @@ export async function loadDict(force = false) {
   return r.entries || [];
 }
 
-/** VoiSona の解析（その行の analyzed_text）から、選んだ表記にあたる語の読みとアクセントを拾う（見つからなければ空） */
+/** 声のエンジンの解析（その行の analyzed_text）から、選んだ表記にあたる語の読みとアクセントを拾う（見つからなければ空） */
 function guessFromAnalysis(lineId: string, surface: string): { reading: string; accent: string } {
   const st = useS.getState();
   const l = st.script && voicedLines(st.script).find((x) => x.l.id === lineId)?.l;
@@ -158,7 +159,7 @@ function DictMenu() {
       {canRuby(menu.text) && (
         <div className="mi" onClick={() => rubySelection(menu)}>
           読みを指定
-          <small>｜選んだ字《よみ》にする（字幕はそのまま、VoiSona にだけ読みを渡す）</small>
+          <small>｜選んだ字《よみ》にする（字幕はそのまま、声のエンジンにだけ読みを渡す）</small>
         </div>
       )}
       <div className="mi" onClick={() => openDict(menu.surface, menu.lineId)}>
@@ -177,6 +178,7 @@ function DictEditor() {
   const entries = useDict((s) => s.entries);
   const [surface, setSurface] = useState("");
   const [reading, setReading] = useState("");
+  const canAccent = has(engineOf(useS((s) => s.voice?.info)), "accent");
   const [useAcc, setUseAcc] = useState(true);
   const [accent, setAccent] = useState("");
   const [busy, setBusy] = useState(false);
@@ -207,7 +209,7 @@ function DictEditor() {
       return null;
     }
     const entry: DictEntry = { surface: sf, reading: rd };
-    if (useAcc) entry.accent = acc;
+    if (useAcc && canAccent) entry.accent = acc;
     return entry;
   };
   // 保存せずに、この言葉だけを今の入力で作って鳴らす（右クリックした行の話者の声。なければ トーク1）
@@ -277,10 +279,10 @@ function DictEditor() {
           onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && !busy && commit()}
           placeholder="しぐれ（ひらがな・カタカナ）"
         />
-        <span className="dim">アクセント</span>
-        <div>
+        {canAccent && <span className="dim">アクセント</span>}
+        {canAccent && <div>
           <label style={{ fontSize: 12 }}>
-            <input type="checkbox" checked={useAcc} onChange={(e) => setUseAcc(e.target.checked)} /> アクセントも指定する（外すと VoiSona に任せる）
+            <input type="checkbox" checked={useAcc} onChange={(e) => setUseAcc(e.target.checked)} /> アクセントも指定する（外すと声のエンジンに任せる）
           </label>
           <div style={{ display: "flex", gap: 4, padding: "8px 0", flexWrap: "wrap", opacity: useAcc ? 1 : 0.35, pointerEvents: useAcc ? undefined : "none" }}>
             {ms.map((m, j) => {
@@ -306,7 +308,7 @@ function DictEditor() {
             {!ms.length && <span className="dim2" style={{ fontSize: 12 }}>読みを入れるとモーラが出ます</span>}
           </div>
           <div className="dim2" style={{ fontSize: 11 }}>モーラのクリックで高・低（アクセント欄と同じ決まり）</div>
-        </div>
+        </div>}
       </div>
       <div className="row" style={{ marginTop: 16 }}>
         {exists && <button className="danger" onClick={remove} disabled={busy}>削除</button>}
@@ -323,7 +325,7 @@ function DictList() {
   const list = useDict((s) => s.list);
   const entries = useDict((s) => s.entries);
   if (!list) return null;
-  const hlText = (h?: string) => (h ? [...h].map((c) => (c === "h" ? "‾" : "_")).join("") : "（VoiSona に任せる）");
+  const hlText = (h?: string) => (h ? [...h].map((c) => (c === "h" ? "‾" : "_")).join("") : "（声のエンジンに任せる）");
   const close = () => useDict.setState({ list: false });
   return (
     <Dialog title="読み上げ辞書（voice_dict.json、動画をまたいで共通）" onClose={close}>

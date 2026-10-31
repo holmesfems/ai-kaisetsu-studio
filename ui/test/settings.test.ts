@@ -5,7 +5,7 @@ import { settingsPatch } from "../src/logic/settings.ts";
 import type { Settings } from "../src/gen/Settings.ts";
 
 const base: Settings = {
-  python: "python", ffmpeg: "", an_root: "D:/an", template_dir: "", voisona_user: "u", voisona_pass: "", voice_port: 8765,
+  python: "python", ffmpeg: "", an_root: "D:/an", template_dir: "", voisona_user: "u", voisona_pass: "", voice_port: 8765, voice_engine: "voisona", voicevox_url: "",
   workers: 3, cache_mb: 1500, last_project: "a", recent: [], api_port: 47815, delivery: "mod", cancel_grace: 3,
 };
 
@@ -31,4 +31,10 @@ test("パスワードは入力して変えたときだけ、空にするとき�
 test("数の欄が数でないときは送らない（変えない）", () => {
   const p = settingsPatch(base, { ...base, workers: "abc" as unknown as number });
   assert.ok(!("workers" in p));
+});
+
+test("声のエンジンと VOICEVOX の場所を変えたら送る", () => {
+  assert.deepEqual(settingsPatch(base, { ...base, voice_engine: "voicevox", voicevox_url: "http://127.0.0.1:50021" }),
+    { voice_engine: "voicevox", voicevox_url: "http://127.0.0.1:50021" });
+  assert.deepEqual(settingsPatch(base, { ...base, voice_engine: "voisona" }), {});
 });

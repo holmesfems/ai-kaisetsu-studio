@@ -1,7 +1,8 @@
-// 声（VoiSona）まわり: 解析・音声の作成・一括作成・再生しながら作る・話者ごとの声と作り直し。
+// 声（声のエンジン）まわり: 解析・音声の作成・一括作成・再生しながら作る・話者ごとの声と作り直し。
 import { call } from "../io/api";
 import { voicedLines } from "../logic/voice";
 import { changedSpeakers, patchVoice, type SpeakerInfo, type SpeakerVoice } from "../logic/speakervoice";
+import { paramFields } from "../logic/voiceengine";
 import { MAX_FAILS_IN_ROW, runSynthAll, synthAllNotice, type SynthAllResult } from "../logic/synthall";
 import { pickAheadLines } from "../logic/playsynth";
 import type { Analysis } from "../types";
@@ -101,7 +102,7 @@ async function runPlaySynth() {
         playSynthFailed.add(id);
         if (++playSynthFails >= MAX_FAILS_IN_ROW) {
           playSynthGaveUp = true;
-          toast(`再生中の音声作成をやめました（VoiSona のエラーが続いたため）: ${errorMessage(e)}`, "error", 9000);
+          toast(`再生中の音声作成をやめました（声のエンジンのエラーが続いたため）: ${errorMessage(e)}`, "error", 9000);
         }
       }
     }
@@ -127,13 +128,13 @@ useS.subscribe((st, prev) => {
 // ------------------------------------------------------------------ 話者ごとの声（トークトラックの ⚙）
 /** 古い中継の知らせ（Rust の analysis::OLD_SERVER と同じ文。話者の一覧の取得が 404 のときに使う） */
 export const OLD_SERVER =
-  "VoiSona の中継（voice_server.py）が古いため、話者の声の設定を使えません。古い中継（台本エディタのフォルダから起動したもの）を閉じてから、AK Studio で中継を再起動してください。";
+  "声の中継（voice_server.py）が古いため、話者の声の設定を使えません。古い中継（台本エディタのフォルダから起動したもの）を閉じてから、AK Studio で中継を再起動してください。";
 
 /** voice_server から、話者ごとのプリセットの声とスタイルの名前を読む */
 export async function loadSpeakersInfo() {
   try {
-    const r = await voiceApi<{ speakers: Record<string, SpeakerInfo> }>("/api/speakers");
-    set({ speakersInfo: { speakers: r.speakers } });
+    const r = await voiceApi<{ speakers: Record<string, SpeakerInfo>; range?: Record<string, unknown> }>("/api/speakers");
+    set({ speakersInfo: { speakers: r.speakers, range: r.range } });
   } catch (e) {
     const a = toApiError(e);
     set({ speakersInfo: { error: a.code === "not_found" ? OLD_SERVER : a.message } });
@@ -167,7 +168,7 @@ async function runRegen() {
     regenTimer = window.setTimeout(runRegen, 500);
     return;
   }
-  if (!get().voice?.ok) return; // VoiSona につながったら、一括作成で作れる（行は「調整後の音声が未作成」になる）
+  if (!get().voice?.ok) return; // 声のエンジンにつながったら、一括作成で作れる（行は「調整後の音声が未作成」になる）
   const sps = [...regenSps];
   regenSps.clear();
   regenRunning = true;
@@ -213,9 +214,11 @@ export function clearRegen() {
 
 export function setSpeakerVoice(sp: string, patch: { [K in keyof SpeakerVoice]?: SpeakerVoice[K] | null } | null) {
   const base = get().speakersInfo?.speakers?.[sp]?.base;
+  const range = get().speakersInfo?.range;
+  const fields = range ? paramFields(range) : undefined; // 古い中継（range が無い）は VoiSona の項目
   editScript((s) => {
     const all = { ...(s.speakers || {}) };
-    const v = patch ? patchVoice(all[sp], base, patch) : null;
+    const v = patch ? patchVoice(all[sp], base, patch, fields) : null;
     if (v) all[sp] = v;
     else delete all[sp];
     s.speakers = all;

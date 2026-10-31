@@ -3,7 +3,7 @@ import type { Settings } from "../gen/Settings.ts";
 import type { SettingsPatch } from "../gen/SettingsPatch.ts";
 
 /** ダイアログで変えられる項目（数は Rust が範囲に丸めるので、ここでは丸めない） */
-const TEXT_KEYS = ["an_root", "template_dir", "python", "ffmpeg", "voisona_user", "voisona_pass"] as const;
+const TEXT_KEYS = ["an_root", "template_dir", "python", "ffmpeg", "voisona_user", "voisona_pass", "voice_engine", "voicevox_url"] as const;
 const NUM_KEYS = ["workers", "cache_mb", "cancel_grace"] as const;
 
 /** orig（開いたときの設定）と edited（編集中の値）を比べて、変わった項目だけのパッチを返す。変わりが無ければ空 */

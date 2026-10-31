@@ -48,7 +48,7 @@ test("failText: partly_saved は元の種類（cause）の案内を付ける", (
 test("failText: コードごとの案内が付く", () => {
   const f = failText("書き出せませんでした", { code: "need_ffmpeg", message: "ffmpeg が見つかりません。", detail: "" });
   assert.equal(f, `書き出せませんでした: ffmpeg が見つかりません。${ERROR_HINT.need_ffmpeg}`);
-  assert.ok(failText("音声を作成できませんでした", { code: "voice_down", message: "接続できません", detail: "" }).endsWith("VoiSona Talk が起動しているか確認してください"));
+  assert.ok(failText("音声を作成できませんでした", { code: "voice_down", message: "接続できません", detail: "" }).endsWith("声のエンジン（VoiSona Talk・VOICEVOX など）が起動しているか確認してください"));
   assert.ok(failText("保存できませんでした", { code: "no_project", message: "回を開いていません", detail: "" }).includes("回を開いてから操作してください"));
   assert.ok(failText("描画できませんでした", { code: "engine_down", message: "止まっています", detail: "" }).includes(ERROR_HINT.engine_down!));
   // 案内が無いコードは message だけ

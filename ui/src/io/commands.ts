@@ -68,7 +68,7 @@ export interface Commands {
   set_gui_clips: { args: { clips: any[] }; ret: void };
   reload_fx: { args: undefined; ret: void };
   sync_set: { args: { cue: number; keyword: string; t: number | null }; ret: void };
-  /** VoiSona の中継（voice_server）の API。戻り値は呼び出し側が型を決める */
+  /** 声の中継（voice_server）の API。戻り値は呼び出し側が型を決める */
   voice_api: { args: { path: string; body: unknown }; ret: any };
   voice_restart: { args: undefined; ret: any };
   voice_dict_path: { args: undefined; ret: string };
