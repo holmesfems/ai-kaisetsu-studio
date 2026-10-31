@@ -93,7 +93,7 @@ function ImportScriptBody({ onClose }: { onClose: () => void }) {
     return (
       <Dialog title="ほかの回から台本を取り込む" onClose={onClose}>
         <div className="row" style={{ marginBottom: 8 }}>
-          <input className="grow" placeholder="絞り込み（an389 / risei / 指名券…）" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
+          <input className="grow" placeholder="絞り込み（フォルダ名・題名の一部）" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
           <button
             disabled={busy}
             onClick={async () => {
