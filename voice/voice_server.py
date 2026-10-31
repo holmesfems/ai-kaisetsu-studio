@@ -61,7 +61,8 @@ def load_engine(value):
             spec = importlib.util.spec_from_file_location(f"ak_voice_engine_{path.stem}", path)
             mod = importlib.util.module_from_spec(spec)
             sys.path.insert(0, str(path.parent))  # エンジンが同じフォルダの voicecommon などを読めるように
-            spec.loader.exec_module(mod)
+            # __pycache__ の .pyc は使わず、毎回ソースから読む（同じ秒に同じ大きさで書き直すと、古い .pyc が使われるため）
+            exec(compile(path.read_text(encoding="utf-8"), str(path), "exec"), mod.__dict__)
             folder, ep = path.parent, str(path)
         else:
             if not re.fullmatch(r"[a-z0-9_]+", value):
