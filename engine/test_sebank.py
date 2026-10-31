@@ -7,6 +7,7 @@
 - fxse が fxcore だけを読むこと
 """
 import json
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -213,8 +214,10 @@ try:
     assert r.returncode == 0, r.stderr or "fxse が fxparts・fxkit・fxsound・ak_kit を読んでいます"
 
     # ---- ak_kit.se_labels: 回の fxsound.py（LABEL 付き）が先に見つかればその表。LABEL が無い古い版（fxfreeze で固定した回）なら kit の表
+    # kit（ak_kit）のテストなので、kit が無いところ（公開版・CI）では飛ばす
     code = "import ak_kit; print(ak_kit.se_labels()['slam'])"
-    for body, want in (("LABEL = {'slam': '回のハンコ'}" + chr(10), "回のハンコ"), ("LEVEL = {}" + chr(10), "ハンコ（叩きつけ）")):
+    has_kit = importlib.util.find_spec("ak_kit") is not None
+    for body, want in (() if not has_kit else (("LABEL = {'slam': '回のハンコ'}" + chr(10), "回のハンコ"), ("LEVEL = {}" + chr(10), "ハンコ（叩きつけ）"))):
         fxd = os.path.join(d, "frozen")
         os.makedirs(fxd, exist_ok=True)
         with open(os.path.join(fxd, "fxsound.py"), "w", encoding="utf-8") as f:
