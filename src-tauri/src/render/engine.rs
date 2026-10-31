@@ -215,7 +215,8 @@ enum Job {
 #[derive(Clone)]
 enum Ctrl {
     Load { timeline: String, overrides: String, clips: String, placeholder: bool, gen: u64 },
-    Overrides(Value),
+    /// 調整と、渡したときの gen（読み込み・unload の後に返ってきた古い結果で警告を出さないため）
+    Overrides(Value, u64),
     /// プロセスを止めて捨てる（Python を変えたとき。次の Load で今の Python から作り直す）
     Respawn,
     Quit,
@@ -408,8 +409,9 @@ impl Engine {
     }
 
     pub fn set_overrides(&self, ov: &Value) {
+        let gen = self.gen.load(Ordering::SeqCst);
         for tx in self.ctrl.lock().iter() {
-            let _ = tx.send(Ctrl::Overrides(ov.clone()));
+            let _ = tx.send(Ctrl::Overrides(ov.clone(), gen));
         }
     }
 
@@ -427,8 +429,9 @@ impl Engine {
     }
 
     /// ワーカーに調整を渡す。ワーカーが断ったら（値が読めないなど）警告に出す。
-    /// 通信の失敗はログだけ（プロセスが落ちているので、次の仕事で作り直して last_ov を渡し直す）
-    fn send_overrides(&self, idx: usize, p: &mut Proc, v: &Value) {
+    /// 通信の失敗はログだけ（プロセスが落ちているので、次の仕事で作り直して last_ov を渡し直す）。
+    /// gen は調整を渡したときの読み込みの世代。返ってくるまでに別の回を開いた・読み直した（gen が進んだ）ら、結果は警告に入れない
+    fn send_overrides(&self, idx: usize, p: &mut Proc, v: &Value, gen: u64) {
         let err = match p.call(&serde_json::json!({"op": "overrides", "overrides": v})) {
             Ok((h, _)) if h.get("ok").and_then(|x| x.as_bool()) == Some(false) => {
                 Some(h.get("error").and_then(|x| x.as_str()).unwrap_or("理由が分かりません").to_string())
@@ -444,6 +447,10 @@ impl Engine {
         }
         let changed = {
             let mut cur = self.ov_error.lock();
+            // unload・load は gen を進めてから警告を消すので、ここで gen を見れば、消した後に古い結果を入れない
+            if self.gen.load(Ordering::SeqCst) != gen {
+                return;
+            }
             match cur.get_mut(idx) {
                 Some(slot) if *slot != err => {
                     *slot = err;
@@ -535,11 +542,11 @@ impl Engine {
                     Ctrl::Respawn => {
                         Self::drop_proc(&mut proc, &mut loaded);
                     }
-                    Ctrl::Overrides(v) => {
+                    Ctrl::Overrides(v, g) => {
                         last_ov = Some(v.clone());
                         // 読み込めていないワーカーは描かないので渡さない（前のタイムラインのまま受け付けて、警告を消してしまうため）
                         if let (Some(p), true) = (proc.as_mut(), loaded.is_some()) {
-                            self.send_overrides(idx, p, &v);
+                            self.send_overrides(idx, p, &v, g);
                         }
                     }
                 }
@@ -563,10 +570,10 @@ impl Engine {
                                     self.finish_load(idx, &m, r);
                                     loaded = ok.then_some(m);
                                 }
-                                Ctrl::Overrides(v) => {
+                                Ctrl::Overrides(v, g) => {
                                     last_ov = Some(v.clone());
                                     if let (Some(p), true) = (proc.as_mut(), loaded.is_some()) {
-                                        self.send_overrides(idx, p, &v);
+                                        self.send_overrides(idx, p, &v, g);
                                     }
                                 }
                             }
@@ -611,7 +618,7 @@ impl Engine {
                     self.finish_load(idx, &m, r);
                     if ok {
                         if let (Some(p), Some(v)) = (proc.as_mut(), last_ov.as_ref()) {
-                            self.send_overrides(idx, p, v);
+                            self.send_overrides(idx, p, v, self.gen.load(Ordering::SeqCst));
                         }
                     }
                     loaded = ok.then_some(m);
