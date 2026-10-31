@@ -5,6 +5,8 @@ description: VoiSona Talk で読み上げるトーク台本（AK Studio の各�
 
 # VoiSona のアクセント調整
 
+**AK Studio の声のエンジンが VoiSona Talk のときだけ使う**（⚙ 設定の「声のエンジン」。上の帯の丸が「VoiSona Talk」）。VOICEVOX などほかのエンジンでは、アクセントの手直しは使えない。読みの直しは辞書（voice_dict.json）だけ案を出す（[docs/voice-engine.md](../../../../docs/voice-engine.md)）。
+
 VoiSona の既定のイントネーションは**かなり間違っていることが多い**。⚠ の付いた所だけでなく、不自然な所は**大胆に直す案を出してよい**（ユーザーの了承済み）。案は確認画面で一つずつ試聴して採用／不採用を決めるので、迷ったら出す側に倒す。書き込むのは、ユーザーが採用したものだけ。
 
 ## 道具（`%LOCALAPPDATA%\ak-studio\voice\`）

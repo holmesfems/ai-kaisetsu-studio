@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-AK Studio（AI Kaisetsu Studio）— 解説動画の台本・声（VoiSona）・演出（fxkit / Python）・合成をまとめた編集アプリ。Tauri v2（Rust）＋ React。
+AK Studio（AI Kaisetsu Studio）— 解説動画の台本・声（VoiSona Talk・VOICEVOX などの声のエンジン）・演出（fxkit / Python）・合成をまとめた編集アプリ。Tauri v2（Rust）＋ React。
 入り方・要るものは [README.md](README.md)、画面の操作・書き出し・Claude とのつなぎ方の詳しい説明は [docs/usage.md](docs/usage.md)、台本の書式は [docs/script-format.md](docs/script-format.md)、演出の kit は [docs/kit.md](docs/kit.md)。
 
 ## コマンド
@@ -60,7 +60,7 @@ python -m pip install -e fxkit --config-settings editable_mode=compat   # compat
 4. **Claude Code の Mod（`claude-plugin/ak-studio/`）** — プロンプトの上の状況の帯と、画面のチャットを `$.prompt.submit` でセッションに届ける。`skills/` は voisona-accent（声の手直し）だけ。演出・企画などのスキルは、非公開の kit の中の別の Mod（`fx-private/claude-plugin/ak-studio-fx/`）。直したら `plugin.json` の version を上げて入れ直す
 5. **入口をまたぐ型（`crates/ak-proto/`）** — 画面と HTTP で共通の型（`Scene`・`MediaProbe`・`SeBankUpdate`）と、HTTP の要求の型（`http.rs`）。ts-rs で `ui/src/gen/` の TypeScript の型に、schemars で MCP の `inputSchema` になる（`mcp/src/main.rs` の `tools()` が使う。説明文は各項目の `///` の doc コメント）。依存は軽く保つ。画面に返すだけの形（`Snapshot` など）は `src-tauri/src/app/dto.rs`。コマンド・イベントの名前と型の表は `ui/src/io/commands.ts`（`call` / `on` はこの表で型づけされる。漏れは `cargo test -p ak-studio` の `app::tests` が見つける）
 6. **fxkit（`fxkit/`）** — 演出の芯（`fxcore.py`。El・Sprite・Timeline・入り抜け・`RecWindowBase`）と、見た目つきの入口（`fxkit.py` = `from fxcore import *` ＋色・パネルなど）・部品（`fxparts.py`）・テンプレート・道具（`align_sync` など）。ワーカーは部品を直接 import せず、kit の入口 `ak_kit.py`（無ければ公開の素の kit `ak_kit_basic.py`。約束は [docs/kit.md](docs/kit.md)）を通す。探す順は「回の `fx/` のコピー → `pip install -e` した `fxkit/` → アプリに埋め込んだ版（`%LOCALAPPDATA%\ak-studio\fxkit\`、`AK_FXKIT_FALLBACK`）」。回を今の版に固定するのは `python -m fxfreeze <回>`。埋め込みの表 `FXKIT_FILES` は `src-tauri/build.rs` が作る（公開の `fxkit/` ＋あれば非公開の kit のフォルダ。場所は環境変数 `AK_FX_PRIVATE`、無ければ `fx-private/kit/`（gitignore）。同じ名前のファイルが 2 つあればビルドが止まる。表を作る関数は `settings/embed_table.rs`）。kit が無くてもビルド・起動できる（素の kit で描く）。帯には使っている kit（`kit: private 1a2b3c (API 1)`）を出す
-7. **声の中継（`voice/`）** — `voice_server.py`（VoiSona Talk の中継）と、voisona-accent スキルの道具（`voice_review.py` など）。アプリは埋め込んだ版を `%LOCALAPPDATA%\ak-studio\voice\` に書き出して動かす（`VOICE_FILES`）。辞書は `%LOCALAPPDATA%\ak-studio\voice_dict.json`（`AK_VOICE_DICT`）
+7. **声の中継（`voice/`）** — `voice_server.py`（声の中継。回・キャッシュ・つなぎ・話者の調整は共通）と、声のエンジンのモジュール（`voisona_tts.py`・`voicevox_tts.py`、共通の部品 `voicecommon.py`。約束は [docs/voice-engine.md](docs/voice-engine.md)。設定の `voice_engine` で選び、自作の `.py` も指せる）、voisona-accent スキルの道具（`voice_review.py` など）。アプリは埋め込んだ版を `%LOCALAPPDATA%\ak-studio\voice\` に書き出して動かす（`VOICE_FILES`）。辞書は `%LOCALAPPDATA%\ak-studio\voice_dict.json`（`AK_VOICE_DICT`）
 
 ### 演出クリップのモデル（複数ファイルにまたがる要点）
 
@@ -83,7 +83,7 @@ python -m pip install -e fxkit --config-settings editable_mode=compat   # compat
 
 - 台本は回の `script/<名前>.yaml`（ブロックごと、行は `id`・`sp`・`start`・`text`・`memo`）。読み書き・古い `.md` からの移行は `script/`（書式 `format.rs`・読み書き `store.rs`）、推敲案の適用は `script/ops.rs`
 - 声のアクセントの手直し（`_voice.json`・`_voice_params.json`）は行の `id` が鍵。文や話者を直すと使われなくなる
-- 声は `voice/voice_server.py`（VoiSona Talk の中継）を裏で動かして使う（`voice/relay.rs`。セリフの並び `VoiceItem` は `voice/layout.rs`）。**直したら Rust を作り直さないとアプリには反映されない**（埋め込み）
+- 声は `voice/voice_server.py`（声の中継）を裏で動かし、`--engine` で選んだ声のエンジンで作る（`voice/relay.rs`。セリフの並び `VoiceItem` は `voice/layout.rs`）。**直したら Rust を作り直さないとアプリには反映されない**（埋め込み）
 - 台本の自動保存は、Claude・voisona-accent・外のエディタの変更をファイルごとに見分けて上書きしない作り（`ui/src/logic/history.ts` の merge など）。ここを触るときは外の変更を黙って消さないこと
 
 ### 回のフォルダとの関係
@@ -120,5 +120,5 @@ python -m pip install -e fxkit --config-settings editable_mode=compat   # compat
 - コード中のコメント・コミットメッセージ・UI の文言は日本語。コミットは `#<issue>: 〜を直す` / `Fix #<issue>: …` の形、ブランチは `feat/…`・`fix/<issue>-…`
 - UI の文言は次の方針と用語集に従う: ボタンは動詞で短く、ラベルは名詞、説明・通知・エラーはです・ます体、エラーは「〜できませんでした: 理由」。用語は統一（「効果音」であって「SE」ではない、「書き出し」「素材」「調整」「回」など）。台本・cue・トーク・演出などの制作用語は言い換えない
 - ファイルの保存は原子的に（一時ファイル → rename）。読めないファイルを既定値で上書きせず、退避して知らせる（過去の監査で直した類のバグ）
-- 失敗を黙らない: ワーカー・ffmpeg・VoiSona・HTTP API の失敗は画面に出す。書き出しで飛ばしたものは警告に出す
+- 失敗を黙らない: ワーカー・ffmpeg・声のエンジン・HTTP API の失敗は画面に出す。書き出しで飛ばしたものは警告に出す
 - 改行は LF（`.gitattributes`）
