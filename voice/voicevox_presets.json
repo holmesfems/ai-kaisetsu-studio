@@ -1,0 +1,21 @@
+{
+  "_説明": "VOICEVOX の素の既定の声。話者ごとに voice_name（表示用）・style_id（VOICEVOX のスタイル ID。声とスタイルを 1 つ選ぶ）・global_parameters（speed=話速・pitch=音高・intonation=抑揚・volume=音量。VOICEVOX の speedScale などと同じ値）を持つ。pauses は句読点の間（秒）、line_gap はセリフとセリフの間隔（秒）。注意: VOICEVOX は声ごとに利用規約があり、動画に「VOICEVOX:ずんだもん」などのクレジット表記が要ります。使う声の規約を確かめてください。",
+  "pauses": {
+    "、": 0.15,
+    "。": 0.2,
+    "default": 0.2
+  },
+  "line_gap": 0.3,
+  "speakers": {
+    "トーク1": {
+      "voice_name": "ずんだもん（ノーマル）",
+      "style_id": 3,
+      "global_parameters": {"speed": 1.0, "pitch": 0.0, "intonation": 1.0, "volume": 1.0}
+    },
+    "トーク2": {
+      "voice_name": "四国めたん（ノーマル）",
+      "style_id": 2,
+      "global_parameters": {"speed": 1.0, "pitch": 0.0, "intonation": 1.0, "volume": 1.0}
+    }
+  }
+}
