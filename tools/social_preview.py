@@ -1,12 +1,12 @@
 """GitHub のソーシャルプレビュー（1280x640）を作る。
 
-使い方: python tools/social_preview.py docs/images/main.png docs/images/social-preview.png
+使い方: python tools/social_preview.py docs/images/main.png docs/images/chat.png docs/images/social-preview.png
 フォントは Windows の Noto Sans JP（C:/Windows/Fonts/NotoSansJP-VF.ttf）。
 """
 import sys
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-SHOT, OUT = sys.argv[1], sys.argv[2]
+SHOT, CHAT, OUT = sys.argv[1], sys.argv[2], sys.argv[3]
 W, H, S = 1280, 640, 2  # 2 倍で描いて縮める
 BG, PANEL, TEXT, DIM, ACCENT = (24, 24, 24), (38, 38, 38), (230, 230, 230), (150, 150, 150), (45, 140, 235)
 
@@ -21,22 +21,27 @@ def jp(size, wght):
 
 
 im = Image.new("RGB", (W * S, H * S), BG)
-d = ImageDraw.Draw(im)
 
-# 右: 画面のスクリーンショット（右下にはみ出させる）
-shot = Image.open(SHOT).convert("RGB")
-sw = 900 * S
-shot = shot.resize((sw, int(shot.height * sw / shot.width)), Image.LANCZOS)
-sx, sy = 606 * S, 150 * S
-mask = Image.new("L", shot.size, 0)
-ImageDraw.Draw(mask).rounded_rectangle([0, 0, shot.width - 1, shot.height - 1], 14 * S, fill=255)
-shadow = Image.new("L", (im.width, im.height), 0)
-ImageDraw.Draw(shadow).rounded_rectangle([sx, sy + 12 * S, sx + shot.width, sy + shot.height + 12 * S], 14 * S, fill=170)
-shadow = shadow.filter(ImageFilter.GaussianBlur(28 * S))
-im.paste((0, 0, 0), (0, 0), shadow)
+def card(img, x, y, w, dim=0.0):
+    """スクリーンショットを角丸・影・縁つきで置く。dim で暗くする（奥に置くもの）。"""
+    img = img.convert("RGB")
+    img = img.resize((w, int(img.height * w / img.width)), Image.LANCZOS)
+    if dim:
+        img = Image.blend(img, Image.new("RGB", img.size, (0, 0, 0)), dim)
+    mask = Image.new("L", img.size, 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, img.width - 1, img.height - 1], 12 * S, fill=255)
+    shadow = Image.new("L", im.size, 0)
+    ImageDraw.Draw(shadow).rounded_rectangle([x, y + 14 * S, x + img.width, y + img.height + 14 * S], 12 * S, fill=190)
+    im.paste((0, 0, 0), (0, 0), shadow.filter(ImageFilter.GaussianBlur(26 * S)))
+    ImageDraw.Draw(im).rounded_rectangle([x - 2 * S, y - 2 * S, x + img.width + 2 * S, y + img.height + 2 * S], 14 * S,
+                                         fill=(80, 80, 80))
+    im.paste(img, (x, y), mask)
+
+
+# 右: 奥に画面全体、手前に Claude とのチャット（このアプリの売り）
+card(Image.open(SHOT), 590 * S, 170 * S, 820 * S, dim=0.35)
+card(Image.open(CHAT), 880 * S, 64 * S, 330 * S)
 d = ImageDraw.Draw(im)
-d.rounded_rectangle([sx - 2 * S, sy - 2 * S, sx + shot.width + 2 * S, sy + shot.height + 2 * S], 16 * S, fill=(70, 70, 70))
-im.paste(shot, (sx, sy), mask)
 
 # 左: 文字
 x = 72 * S
