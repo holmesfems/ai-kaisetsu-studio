@@ -1,0 +1,13 @@
+[package]
+name = "ak-studio-mcp"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "MCP server (stdio) that connects Claude Code to AK Studio, with a claude/channel push"
+
+[dependencies]
+serde_json = "1"
+ureq = { version = "2", features = ["json"] }
+base64 = "0.22"
+ak-proto = { path = "../crates/ak-proto" }
+dirs = "5"

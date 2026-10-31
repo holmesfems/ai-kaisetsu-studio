@@ -1,0 +1,21 @@
+# 公開側の芯だけ。非公開の kit（fx-private/kit/）は自分の pyproject.toml を持つ。
+# 開発では: python -m pip install -e fxkit --config-settings editable_mode=compat
+# （既定の editable は import フック方式で、AK_FXKIT_FALLBACK の sys.path より後ろになり、探す順が逆になる）
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ak-fxkit"
+version = "0.1.0"
+description = "AK Studio の演出の芯（fxcore）と素の kit"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = ["pillow", "numpy", "scipy", "fonttools", "imageio-ffmpeg"]
+
+[project.optional-dependencies]
+sync = ["faster-whisper"]
+track = ["opencv-python"]
+
+[tool.setuptools]
+py-modules = ["fxcore", "fxse", "ak_kit_basic", "fxfreeze", "align_sync", "rec_track"]

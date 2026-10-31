@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>アクセント確認</title>
+<style>
+:root {
+  --bg: #f5f4f0; --panel: #ffffff; --ink: #1d1d1f; --muted: #6e6d72; --line: #e2e0da;
+  --accent: #3563d0; --accent-ink: #ffffff; --danger: #c23b3b; --focus: #fff6c9;
+  --t1: #d9691c; --t1bg: #fff0e3; --t2: #2a72cc; --t2bg: #e7f0fc; --ok: #3f8a2e; --okbg: #eaf5e3;
+  --hi: #3563d0; --hibg: #dfe8fb; --lo: #8a8890; --lobg: #f0efeb; --warn: #b9770e; --warnbg: #fff4dc;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #16171a; --panel: #202227; --ink: #ececef; --muted: #9b9ba4; --line: #34363d;
+    --accent: #7ea2ff; --accent-ink: #10131a; --danger: #ff7b7b; --focus: #3a3520;
+    --t1: #ffa264; --t1bg: #3a281b; --t2: #73b2ff; --t2bg: #1c2b3d; --ok: #a6d46f; --okbg: #26331b;
+    --hi: #7ea2ff; --hibg: #24314f; --lo: #8d8c95; --lobg: #2a2c31; --warn: #f0b84f; --warnbg: #3a3020;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #16171a; --panel: #202227; --ink: #ececef; --muted: #9b9ba4; --line: #34363d;
+  --accent: #7ea2ff; --accent-ink: #10131a; --danger: #ff7b7b; --focus: #3a3520;
+  --t1: #ffa264; --t1bg: #3a281b; --t2: #73b2ff; --t2bg: #1c2b3d; --ok: #a6d46f; --okbg: #26331b;
+  --hi: #7ea2ff; --hibg: #24314f; --lo: #8d8c95; --lobg: #2a2c31; --warn: #f0b84f; --warnbg: #3a3020;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 14px/1.6 "BIZ UDPGothic", "Yu Gothic UI", "Hiragino Sans", system-ui, sans-serif;
+}
+button, input, textarea { font: inherit; color: inherit; }
+button {
+  border: 1px solid var(--line); background: var(--panel); border-radius: 6px;
+  padding: 3px 10px; cursor: pointer; white-space: nowrap;
+}
+button:hover { border-color: var(--muted); }
+button:disabled { opacity: .5; cursor: default; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button.ghost { border-color: transparent; background: transparent; color: var(--muted); }
+button.ghost:hover { color: var(--ink); border-color: var(--line); }
+input[type=text], textarea {
+  border: 1px solid var(--line); background: var(--bg); border-radius: 6px; padding: 3px 8px;
+}
+textarea { width: 100%; resize: vertical; min-height: 32px; }
+
+header {
+  position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--line);
+}
+header h1 { font-size: 15px; margin: 0 8px 0 0; }
+header .sep { width: 1px; height: 20px; background: var(--line); }
+#counts { color: var(--muted); font-size: 12px; }
+#saved { margin-left: auto; color: var(--muted); font-size: 12px; }
+.tabs { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.tabs button { border: 0; border-radius: 0; }
+.tabs button.on { background: var(--accent); color: var(--accent-ink); }
+
+main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+.help { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
+.help b { color: var(--ink); font-weight: normal; }
+h2 { font-size: 15px; margin: 24px 0 8px; }
+.empty { color: var(--muted); padding: 24px; text-align: center; border: 1px dashed var(--line); border-radius: 8px; }
+
+.card {
+  background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--line);
+  border-radius: 8px; padding: 10px 14px; margin-bottom: 10px;
+}
+.card.st-ok { border-left-color: var(--ok); }
+.card.st-ng { border-left-color: var(--danger); opacity: .72; }
+.card.st-hold { border-left-color: var(--warn); }
+.card .top { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.card .id { font-weight: bold; color: var(--muted); font-size: 12px; min-width: 28px; }
+.card .ttl { font-weight: bold; }
+.card .sp { font-size: 12px; padding: 0 6px; border-radius: 4px; }
+.sp.t1 { color: var(--t1); background: var(--t1bg); }
+.sp.t2 { color: var(--t2); background: var(--t2bg); }
+.badge { font-size: 11px; padding: 0 6px; border-radius: 4px; border: 1px solid currentColor; }
+.badge.check { color: var(--warn); }
+.badge.edited { color: var(--muted); }
+.badge.bad { color: var(--danger); }
+.why { color: var(--muted); font-size: 12px; }
+.question { background: var(--warnbg); color: var(--ink); border-radius: 6px; padding: 4px 10px; margin: 6px 0; font-size: 13px; }
+.status { margin-left: auto; display: inline-flex; gap: 4px; }
+.status button.on[data-s=ok] { background: var(--ok); border-color: var(--ok); color: var(--accent-ink); }
+.status button.on[data-s=ng] { background: var(--danger); border-color: var(--danger); color: var(--accent-ink); }
+.status button.on[data-s=hold] { background: var(--warn); border-color: var(--warn); color: var(--accent-ink); }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.row .lab { width: 32px; color: var(--muted); font-size: 12px; flex: none; }
+.note { margin-top: 8px; }
+.text { margin: 4px 0 0; }
+
+/* 高低の表示：上の段＝高、下の段＝低 */
+.pitch { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 2px 0; flex: 1; min-width: 0; }
+.w { display: inline-flex; flex-direction: column; align-items: stretch; }
+.w .wt { font-size: 10px; color: var(--muted); text-align: center; white-space: nowrap; padding: 0 2px; }
+.w .ms { display: flex; }
+.m {
+  display: grid; grid-template-rows: 18px 18px; width: 24px; padding: 0; border: 0; background: none;
+  border-radius: 0; cursor: default; font-size: 13px; line-height: 18px;
+}
+.m span { grid-row: 2; background: var(--lobg); color: var(--lo); border-top: 2px solid var(--lo); }
+.m.h span { grid-row: 1; background: var(--hibg); color: var(--hi); border-top: 2px solid var(--hi); font-weight: bold; }
+.edit .m { cursor: pointer; }
+.edit .m:hover span { outline: 1px solid var(--muted); }
+.sym { align-self: flex-end; color: var(--muted); padding: 0 2px; font-size: 13px; line-height: 18px; }
+.gap { width: 8px; align-self: stretch; display: flex; justify-content: center; border: 0; background: none; padding: 0; border-radius: 0; }
+.gap::after { content: ""; width: 1px; background: transparent; margin-top: 14px; }
+.edit .gap { cursor: pointer; }
+.edit .gap:hover::after { background: var(--muted); }
+.gap.cut { width: 14px; }
+.gap.cut::after { width: 3px; background: var(--t1); border-radius: 2px; }
+.gap.pause::after { width: 3px; background: var(--line); }
+.gap.fixed { cursor: default !important; }
+.phrase-bad .m span { box-shadow: inset 0 -2px 0 var(--danger); }
+
+.ex { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; margin-top: 4px; }
+.ex .src { color: var(--muted); font-size: 12px; }
+.opts { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.opts button.on { border-color: var(--accent); color: var(--accent); }
+.reading { width: 12em; }
+button.play { min-width: 52px; }
+button.play.busy { opacity: .6; }
+button.play.now { border-color: var(--accent); color: var(--accent); }
+
+#toast {
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); max-width: calc(100% - 32px);
+  background: var(--ink); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 13px;
+  opacity: 0; pointer-events: none; transition: opacity .2s; white-space: pre-wrap;
+}
+#toast.on { opacity: .95; }
+.hidden { display: none !important; }
+@media (max-width: 640px) {
+  header, main { padding-left: 16px; padding-right: 16px; }
+  .status { margin-left: 0; }
+  #saved { margin-left: 0; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>アクセント確認</h1>
+  <span id="proj"></span>
+  <span class="sep"></span>
+  <div class="tabs" id="filter">
+    <button data-f="all" class="on">全部</button>
+    <button data-f="todo">未決</button>
+    <button data-f="check">要確認</button>
+  </div>
+  <span id="counts"></span>
+  <span id="saved"></span>
+  <button id="bDone" class="primary" title="結果を保存して、Claude に渡す文をコピーします">Claude に渡す</button>
+</header>
+<main>
+  <p class="help">
+    <b>モーラ</b>をクリックで高↔低、<b>単語の間</b>をクリックでアクセント句の区切り（オレンジの線）を入れる／外す。
+    灰色の線は句読点の間（変えられません）。赤い下線は句の中が「低→高→低」になっていない所。
+    <b>▶今</b>は今の音声、<b>▶案</b>は調整した形で VoiSona に作らせた音声です。結果は自動で保存されます。
+  </p>
+  <div id="list"></div>
+</main>
+<div id="toast"></div>
+<script>
+const $ = s => document.querySelector(s);
+function el(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k.startsWith("on")) e[k] = v; else if (k === "class") e.className = v; else e.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of kids.flat()) if (c != null && c !== false) e.append(c.nodeType ? c : document.createTextNode(c));
+  return e;
+}
+// null や配列が混ざっていても、そのまま中身を入れ替える
+function put(node, ...kids) { node.replaceChildren(...kids.flat().filter(c => c != null && c !== false)); return node; }
+let toastTimer;
+function toast(msg, ms = 3500) {
+  const t = $("#toast"); t.textContent = msg; t.classList.add("on");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("on"), ms);
+}
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const d = await r.json().catch(() => ({ error: r.statusText }));
+  if (!r.ok) throw new Error(d.error || r.statusText);
+  return d;
+}
+
+// ---------- 読み・モーラ ----------
+const SMALL = "ァィゥェォャュョヮ";
+const kata = s => [...(s || "")].map(c => (c >= "ぁ" && c <= "ゖ") ? String.fromCharCode(c.charCodeAt(0) + 0x60) : c)
+  .join("").replace(/[^ァ-ヴー]/g, "");
+// ローマ字 → ひらがな（ヘボン式・訓令式のよく使う形。nn／n' ＝ん、子音の重ね＝っ、- ＝ー）
+const ROMA = (() => {
+  const t = { a: "あ", i: "い", u: "う", e: "え", o: "お", "-": "ー", nn: "ん", "n'": "ん",
+    shi: "し", chi: "ち", tsu: "つ", fu: "ふ", ji: "じ", sha: "しゃ", shu: "しゅ", sho: "しょ", she: "しぇ",
+    cha: "ちゃ", chu: "ちゅ", cho: "ちょ", che: "ちぇ", ja: "じゃ", ju: "じゅ", jo: "じょ", je: "じぇ",
+    tsa: "つぁ", tse: "つぇ", tso: "つぉ", fa: "ふぁ", fi: "ふぃ", fe: "ふぇ", fo: "ふぉ",
+    thi: "てぃ", dhi: "でぃ", ti: "てぃ", di: "でぃ", tu: "とぅ", du: "どぅ", wi: "うぃ", we: "うぇ", wo: "を",
+    va: "ゔぁ", vi: "ゔぃ", vu: "ゔ", ve: "ゔぇ", vo: "ゔぉ", ye: "いぇ",
+    xa: "ぁ", xi: "ぃ", xu: "ぅ", xe: "ぇ", xo: "ぉ", la: "ぁ", li: "ぃ", lu: "ぅ", le: "ぇ", lo: "ぉ",
+    xya: "ゃ", xyu: "ゅ", xyo: "ょ", xtu: "っ", ltu: "っ", xtsu: "っ" };
+  const V = "aiueo";
+  for (const [c, kana] of Object.entries({ k: "かきくけこ", g: "がぎぐげご", s: "さしすせそ", z: "ざじずぜぞ", t: "たちつてと",
+    d: "だぢづでど", n: "なにぬねの", h: "はひふへほ", b: "ばびぶべぼ", p: "ぱぴぷぺぽ", m: "まみむめも", r: "らりるれろ" }))
+    [...kana].forEach((k, i) => { if (!(c + V[i] in t)) t[c + V[i]] = k; });
+  Object.assign(t, { ya: "や", yu: "ゆ", yo: "よ", wa: "わ" });
+  for (const [c, k] of Object.entries({ k: "き", g: "ぎ", n: "に", h: "ひ", b: "び", p: "ぴ", m: "み", r: "り" }))
+    for (const [v, s] of [["a", "ゃ"], ["u", "ゅ"], ["o", "ょ"], ["e", "ぇ"]]) t[c + "y" + v] = k + s;
+  return t;
+})();
+function romaToKana(s) {
+  let out = "", i = 0;
+  s = s.toLowerCase();
+  while (i < s.length) {
+    const c = s[i];
+    if (/[a-z]/.test(c) && c === s[i + 1] && c !== "n" && !"aiueo".includes(c)) { out += "っ"; i++; continue; }
+    if (c === "n" && i + 1 < s.length && !/[aiueoyn']/.test(s[i + 1])) { out += "ん"; i++; continue; }
+    if (c === "n" && i + 1 === s.length) { out += "ん"; i++; continue; }
+    let hit = null;
+    for (let L = 4; L >= 1; L--) { const k = s.slice(i, i + L); if (ROMA[k]) { hit = k; break; } }
+    if (hit) { out += ROMA[hit]; i += hit.length; } else { out += s[i]; i++; }
+  }
+  return out;
+}
+// 確定した読みをカタカナにする（ローマ字 → ひらがな → カタカナ。カタカナ以外は捨てる）
+const toKatakana = s => kata(romaToKana((s || "").normalize("NFKC")));
+function morae(s) {
+  const out = [];
+  for (const c of kata(s)) { if (SMALL.includes(c) && out.length) out[out.length - 1] += c; else out.push(c); }
+  return out;
+}
+
+// ---------- 解析結果（tsml）の読み書き ----------
+function parseXml(xml) {
+  const doc = new DOMParser().parseFromString(xml, "application/xml");
+  if (doc.querySelector("parsererror")) throw new Error("解析結果を読めませんでした");
+  return doc;
+}
+// 表示用のまとまり：[{kind:"word", node, mora[], first(句読点の直後で区切りが固定)} | {kind:"sym", text}]
+function wordsOf(doc) {
+  const items = [];
+  for (const ap of doc.querySelectorAll("acoustic_phrase")) {
+    let first = true;
+    for (const w of ap.querySelectorAll("word")) {
+      const ph = w.getAttribute("phoneme") || "";
+      const text = w.textContent || w.getAttribute("original") || "";
+      if (!ph) { items.push({ kind: "sym", text, unread: /[\p{L}\p{N}]/u.test(text) }); continue; }
+      const n = ph.split("|").length;
+      let m = morae(w.getAttribute("pronunciation") || "");
+      if (m.length !== n) m = ph.split("|");
+      if (!w.getAttribute("hl") || w.getAttribute("hl").length !== n) w.setAttribute("hl", "l".repeat(n));
+      items.push({ kind: "word", node: w, text, mora: m, first });
+      first = false;
+    }
+  }
+  return items;
+}
+// 句ごとに高低をつなげて、「低→高→低」になっているかを見る
+function phraseOk(items) {
+  const bad = new Set();
+  let cur = [];
+  const flush = () => {
+    const hl = cur.map(it => it.node.getAttribute("hl")).join("");
+    if (cur.length && (!/^l*h*l*$/.test(hl) || (hl.length > 1 && !hl.includes("h")))) cur.forEach(it => bad.add(it));
+    cur = [];
+  };
+  for (const it of items) {
+    if (it.kind !== "word") continue;
+    if (it.first || it.node.getAttribute("chain") !== "1") flush();
+    cur.push(it);
+  }
+  flush();
+  return bad;
+}
+function pitchView(xml, editable, onChange) {
+  const doc = parseXml(xml);
+  const items = wordsOf(doc);
+  const bad = phraseOk(items);
+  const box = el("div", { class: "pitch" + (editable ? " edit" : "") });
+  items.forEach((it, i) => {
+    if (it.kind === "sym") {
+      box.append(el("span", { class: "sym", title: it.unread ? "読めなかった言葉" : null, style: it.unread ? "color:var(--danger)" : null }, it.text));
+      return;
+    }
+    if (i > 0) {
+      const cut = it.first || it.node.getAttribute("chain") !== "1";
+      const g = el("button", { class: "gap" + (cut ? " cut" : "") + (it.first ? " pause fixed" : ""),
+        title: it.first ? "句読点の間（区切りは固定）" : (cut ? "ここで区切っている（クリックでつなげる）" : "同じ句（クリックで区切る）") });
+      if (it.first) g.classList.remove("cut");
+      if (editable && !it.first) g.onclick = () => { it.node.setAttribute("chain", cut ? "1" : "0"); onChange(ser(doc)); };
+      box.append(g);
+    }
+    const hl = it.node.getAttribute("hl");
+    const ms = el("span", { class: "ms" });
+    it.mora.forEach((m, k) => {
+      const b = el("button", { class: "m" + (hl[k] === "h" ? " h" : ""), title: hl[k] === "h" ? "高" : "低", tabindex: editable ? null : -1 },
+        el("span", {}, m));
+      if (editable) b.onclick = () => {
+        const a = [...it.node.getAttribute("hl")]; a[k] = a[k] === "h" ? "l" : "h";
+        it.node.setAttribute("hl", a.join("")); onChange(ser(doc));
+      };
+      ms.append(b);
+    });
+    box.append(el("span", { class: "w" + (bad.has(it) ? " phrase-bad" : "") }, el("span", { class: "wt" }, it.text), ms));
+  });
+  return { box, bad: bad.size > 0 };
+}
+const ser = doc => new XMLSerializer().serializeToString(doc.documentElement);
+
+// ---------- 再生 ----------
+const player = new Audio();
+let playingBtn = null;
+async function play(btn, body) {
+  if (playingBtn === btn && !player.paused) { player.pause(); btn.classList.remove("now"); playingBtn = null; return; }
+  btn.classList.add("busy"); btn.disabled = true;
+  try {
+    const r = await api("/api/synth", body);
+    playingBtn?.classList.remove("now");
+    player.src = `/audio/${r.id}.wav?${Date.now()}`;
+    await player.play();
+    playingBtn = btn; btn.classList.add("now");
+    if (r.unread?.length) toast(`読めなかった言葉：${r.unread.join("、")}`);
+  } catch (e) { toast(`音声を作れませんでした：${e.message}`, 6000); }
+  finally { btn.classList.remove("busy"); btn.disabled = false; }
+}
+player.onended = () => { playingBtn?.classList.remove("now"); playingBtn = null; };
+function playBtn(label, body, title) {
+  const b = el("button", { class: "play", title });
+  b.textContent = label;
+  b.onclick = () => play(b, typeof body === "function" ? body() : body);
+  return b;
+}
+
+// ---------- 状態 ----------
+let P = null;          // proposal.json
+const R = { dict: {}, lines: {} };  // id → {status, note, reading, accent} / {status, note, analyzed_text}
+let filter = "all";
+
+function statusBox(store, id, card) {
+  const box = el("span", { class: "status" });
+  for (const [s, label] of [["ok", "採用"], ["ng", "不採用"], ["hold", "保留"]]) {
+    const b = el("button", { "data-s": s, class: store[id].status === s ? "on" : null }, label);
+    b.onclick = () => {
+      store[id].status = store[id].status === s ? null : s;
+      box.querySelectorAll("button").forEach(x => x.classList.toggle("on", x.dataset.s === store[id].status));
+      card.className = "card" + (store[id].status ? " st-" + store[id].status : "");
+      changed(false);
+    };
+    box.append(b);
+  }
+  return box;
+}
+function noteBox(store, id) {
+  const t = el("textarea", { rows: 1, placeholder: "メモ（Claude への指示や、耳で聞いた感想）" });
+  t.value = store[id].note || "";
+  t.oninput = () => { store[id].note = t.value; changed(false); };
+  return el("div", { class: "note" }, t);
+}
+const spCls = sp => sp === "トーク1" ? "sp t1" : "sp t2";
+
+function dictCard(d) {
+  const st = R.dict[d.id];
+  const card = el("div", { class: "card" + (st.status ? " st-" + st.status : ""), "data-id": d.id });
+  // 読みの欄は作り直さない（作り直すと IME の変換中の文字が消える）。高低の表示だけを描き直す
+  const reading = el("input", { type: "text", class: "reading", value: st.reading,
+    title: "読み。ひらがな・ローマ字でも、確定（Enter か欄の外をクリック）でカタカナになります" });
+  const accView = el("span", { class: "row", style: "margin:0" });
+  const accRow = el("div", { class: "row" }, el("span", { class: "lab" }, "案"), reading, accView);
+  const optBox = el("span", { class: "opts" });
+  const drawAcc = () => {
+    const m = morae(st.reading);
+    if (st.accent.length !== m.length) st.accent = (st.accent + "l".repeat(m.length)).slice(0, m.length);
+    const wrap = el("div", { class: "pitch edit" }, el("span", { class: "w" }, el("span", { class: "wt" }, d.surface),
+      el("span", { class: "ms" }, m.map((x, k) => {
+        const b = el("button", { class: "m" + (st.accent[k] === "h" ? " h" : ""), title: st.accent[k] === "h" ? "高" : "低" }, el("span", {}, x));
+        b.onclick = () => { const a = [...st.accent]; a[k] = a[k] === "h" ? "l" : "h"; st.accent = a.join(""); drawAcc(); changed(false); };
+        return b;
+      }))));
+    const ok = /^l*h*l*$/.test(st.accent) && (st.accent.length < 2 || st.accent.includes("h"));
+    put(accView, wrap, el("code", {}, st.accent),
+      ok ? null : el("span", { class: "badge bad" }, "低→高→低でない"));
+    optBox.querySelectorAll("button").forEach(b => b.classList.toggle("on", b._o.reading === st.reading && b._o.accent === st.accent));
+  };
+  // 確定したときに、ひらがな・ローマ字をカタカナにする（入力中・変換中は触らない）
+  const commit = () => {
+    const v = toKatakana(reading.value);
+    reading.value = v;
+    if (v && v !== st.reading) { st.reading = v; drawAcc(); changed(false); }
+    else if (!v) reading.value = st.reading;
+  };
+  reading.onchange = commit;
+  reading.onkeydown = e => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); commit(); } };
+  for (const o of d.options || []) {
+    const b = el("button", {}, o.label); b._o = o;
+    b.onclick = () => { st.reading = o.reading; st.accent = o.accent; reading.value = o.reading; drawAcc(); changed(false); };
+    optBox.append(b);
+  }
+  const reset = el("button", { class: "ghost", title: "Claude の案に戻す" }, "案に戻す");
+  reset.onclick = () => { st.reading = d.reading; st.accent = d.accent; reading.value = d.reading; drawAcc(); changed(false); };
+
+  const exs = (d.examples || []).slice(0, 3).map(x => el("div", { class: "ex" },
+    playBtn("▶今", { speaker: x.speaker, text: x.text, analyzed_text: x.analyzed_text || null }, "今の辞書・手直しで作った音声"),
+    x.edited ? el("span", { class: "badge edited", title: "手直し済みの行には辞書が効きません（行の案で直します）" }, "手直し済") :
+      playBtn("▶案", () => ({ speaker: x.speaker, text: x.text, dict_extra: [{ surface: d.surface, reading: st.reading, accent: st.accent }] }), "この辞書の案で作った音声"),
+    el("span", { class: spCls(x.speaker) }, x.speaker), el("span", {}, x.text), el("span", { class: "src" }, `${x.title} #${x.no}`)));
+  const more = (d.examples || []).length > 3 ? el("div", { class: "why" }, `ほか ${d.examples.length - 3} 行`) : null;
+
+  put(card,
+    el("div", { class: "top" }, el("span", { class: "id" }, d.id), el("span", { class: "ttl" }, d.surface),
+      d.check ? el("span", { class: "badge check" }, "要確認") : null,
+      d.registered ? el("span", { class: "badge edited" }, `登録済み：${d.registered.reading} ${d.registered.accent || ""}`) : null,
+      el("span", { class: "why" }, d.why), statusBox(R.dict, d.id, card)),
+    d.question ? el("div", { class: "question" }, d.question) : null,
+    accRow,
+    (d.options || []).length ? el("div", { class: "row" }, el("span", { class: "lab" }, "候補"), optBox, reset) : el("div", { class: "row" }, reset),
+    exs.length ? exs : el("div", { class: "why" }, "台本に出てくる行がありません"), more,
+    noteBox(R.dict, d.id));
+  drawAcc();
+  return card;
+}
+
+function lineCard(l) {
+  const st = R.lines[l.id];
+  const card = el("div", { class: "card" + (st.status ? " st-" + st.status : ""), "data-id": l.id });
+  const curRow = el("div", { class: "row" });
+  const newRow = el("div", { class: "row" });
+  const draw = () => {
+    const cur = pitchView(l.current, false);
+    curRow.replaceChildren(el("span", { class: "lab" }, "今"),
+      playBtn("▶今", { speaker: l.speaker, text: l.text, analyzed_text: l.edited ? l.current : null }, "今の音声"), cur.box);
+    const nw = pitchView(st.analyzed_text, true, xml => { st.analyzed_text = xml; draw(); changed(false); });
+    newRow.replaceChildren(el("span", { class: "lab" }, "案"),
+      playBtn("▶案", () => ({ speaker: l.speaker, text: l.text, analyzed_text: st.analyzed_text }), "この形で作った音声"), nw.box);
+    if (nw.bad) newRow.append(el("span", { class: "badge bad" }, "低→高→低でない句があります"));
+  };
+  const reset = el("button", { class: "ghost", title: "Claude の案に戻す" }, "案に戻す");
+  reset.onclick = () => { st.analyzed_text = l.proposed; draw(); changed(false); };
+  const toCur = el("button", { class: "ghost", title: "今の形から調整し直す" }, "今の形から");
+  toCur.onclick = () => { st.analyzed_text = l.current; draw(); changed(false); };
+  put(card,
+    el("div", { class: "top" }, el("span", { class: "id" }, l.id), el("span", { class: "ttl" }, `${l.title} #${l.no}`),
+      el("span", { class: spCls(l.speaker) }, l.speaker),
+      l.check ? el("span", { class: "badge check" }, "要確認") : null,
+      l.edited ? el("span", { class: "badge edited", title: "_voice.json に手直しが入っている行。採用するとそれを上書きします" }, "手直し済") : null,
+      statusBox(R.lines, l.id, card)),
+    el("div", { class: "text" }, l.text),
+    el("div", { class: "why" }, l.why),
+    l.question ? el("div", { class: "question" }, l.question) : null,
+    curRow, newRow,
+    el("div", { class: "row" }, reset, toCur),
+    noteBox(R.lines, l.id));
+  draw();
+  return card;
+}
+
+function visible(item, st) {
+  if (filter === "todo") return !st.status;
+  if (filter === "check") return item.check;
+  return true;
+}
+function render() {
+  const list = $("#list");
+  if (!P) {
+    list.replaceChildren(el("div", { class: "empty" }, "まだ案がありません。Claude に「アクセントの案を出して」と頼むと、",
+      el("code", {}, "voice_review/proposal.json"), " ができてここに出ます。"));
+    return;
+  }
+  const ds = P.dict.filter(d => visible(d, R.dict[d.id]));
+  const ls = P.lines.filter(l => visible(l, R.lines[l.id]));
+  put(list,
+    el("h2", {}, `辞書の案（${P.dict.length}）`),
+    ds.length ? ds.map(dictCard) : el("div", { class: "empty" }, "ありません"),
+    el("h2", {}, `行の手直し案（${P.lines.length}）`),
+    ls.length ? ls.map(lineCard) : el("div", { class: "empty" }, "ありません"));
+  counts();
+}
+function counts() {
+  if (!P) return;
+  const all = [...Object.values(R.dict), ...Object.values(R.lines)];
+  const c = s => all.filter(x => (x.status || null) === s).length;
+  $("#counts").textContent = `採用 ${c("ok")}・不採用 ${c("ng")}・保留 ${c("hold")}・未決 ${c(null)}`;
+}
+
+// ---------- 保存 ----------
+function result() {
+  return {
+    saved: new Date().toLocaleString("sv-SE"), project: P.project, proposal_created: P.created,
+    dict: P.dict.map(d => ({ id: d.id, surface: d.surface, reading: R.dict[d.id].reading, accent: R.dict[d.id].accent,
+      status: R.dict[d.id].status || null, note: R.dict[d.id].note || "",
+      changed: R.dict[d.id].reading !== d.reading || R.dict[d.id].accent !== d.accent })),
+    lines: P.lines.map(l => ({ id: l.id, file: l.file, no: l.no, speaker: l.speaker, text: l.text,
+      analyzed_text: R.lines[l.id].analyzed_text, status: R.lines[l.id].status || null, note: R.lines[l.id].note || "",
+      changed: R.lines[l.id].analyzed_text !== l.proposed })),
+  };
+}
+let saveTimer;
+function changed() { counts(); $("#saved").textContent = "未保存"; clearTimeout(saveTimer); saveTimer = setTimeout(save, 800); }
+async function save() {
+  clearTimeout(saveTimer);
+  try { const r = await api("/api/review/result", result()); $("#saved").textContent = "保存済み"; return r.path; }
+  catch (e) { $("#saved").textContent = "保存できませんでした"; toast(e.message, 6000); throw e; }
+}
+$("#bDone").onclick = async () => {
+  if (!P) return;
+  const path = await save();
+  const r = result();
+  const todo = [...r.dict, ...r.lines].filter(x => !x.status).length;
+  const msg = `アクセント確認の結果を保存しました（${path}）。採用したものを反映してください。`;
+  try { await navigator.clipboard.writeText(msg); } catch { /* コピーできなくても保存はできている */ }
+  toast(`保存して、Claude に渡す文をコピーしました${todo ? `（未決 ${todo} 件は保留として扱います）` : ""}\n${msg}`, 7000);
+};
+$("#filter").onclick = e => {
+  const b = e.target.closest("button"); if (!b) return;
+  filter = b.dataset.f;
+  $("#filter").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+  render();
+};
+
+(async () => {
+  try {
+    const d = await api("/api/review");
+    $("#proj").textContent = d.project;
+    document.title = `アクセント確認 - ${d.project}`;
+    P = d.proposal;
+    if (P) {
+      const old = d.result && d.result.proposal_created === P.created ? d.result : null;
+      const find = (arr, id) => (old?.[arr] || []).find(x => x.id === id);
+      for (const x of P.dict) {
+        const o = find("dict", x.id);
+        R.dict[x.id] = { status: o?.status || null, note: o?.note || "", reading: o?.reading ?? x.reading, accent: o?.accent ?? x.accent };
+      }
+      for (const x of P.lines) {
+        const o = find("lines", x.id);
+        R.lines[x.id] = { status: o?.status || null, note: o?.note || "", analyzed_text: o?.analyzed_text || x.proposed };
+      }
+      $("#saved").textContent = old ? `前回の続き（${old.saved}）` : `案：${P.created}`;
+    }
+  } catch (e) { toast(`サーバーにつながりません：${e.message}`, 8000); }
+  render();
+})();
+</script>
+</body>
+</html>

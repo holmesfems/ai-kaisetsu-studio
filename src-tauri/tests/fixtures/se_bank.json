@@ -1,0 +1,61 @@
+{
+  "path": "D:/videos/sample_episode/fx/se/bank.json",
+  "exists": true,
+  "files": ["slam/a.wav", "slam/broken.wav"],
+  "shelf_dir": "C:/Users/me/AppData/Local/ak-studio/se_library",
+  "db_range": [-30.0, 24.0],
+  "kinds": [
+    {
+      "kind": "slam",
+      "label": "ハンコ（叩きつけ）",
+      "level": -14.0,
+      "prio": 90,
+      "bankable": true,
+      "lite": true,
+      "stem": "1_title_stamp（章タイトル・ハンコ）",
+      "use": ["synth", "slam/a.wav"],
+      "explicit": true,
+      "shelf": false,
+      "times": [1.5, 12.25],
+      "cands": [
+        {"src": "synth", "db": 0.0, "exists": true, "bad": null, "extra": false, "folder": false, "source": ""},
+        {"src": "slam/a.wav", "db": -3.5, "exists": true, "bad": null, "extra": false, "folder": true, "source": "Sample Library / a"},
+        {"src": "slam/broken.wav", "db": 0.0, "exists": true, "bad": "読めない wav です（使えるのは 16bit PCM だけです）: x", "extra": false, "folder": true, "source": ""},
+        {"src": "gone.wav", "db": 0.0, "exists": false, "bad": "ファイルがありません", "extra": true, "folder": false, "source": ""}
+      ]
+    },
+    {
+      "kind": "count",
+      "label": "count",
+      "level": -33.0,
+      "prio": 55,
+      "bankable": false,
+      "lite": true,
+      "stem": "3_ui（ピピッ・ポッ・カチッ・カウント）",
+      "use": ["synth"],
+      "explicit": false,
+      "shelf": false,
+      "times": [],
+      "cands": [
+        {"src": "synth", "db": 2.0, "exists": true, "bad": null, "extra": false, "folder": false, "source": ""}
+      ]
+    },
+    {
+      "kind": "guide_done",
+      "label": "操作の完了",
+      "level": -26.0,
+      "prio": 66,
+      "bankable": true,
+      "lite": false,
+      "stem": "3_ui（ピピッ・ポッ・カチッ・カウント）",
+      "use": ["guide_done/b.wav"],
+      "explicit": true,
+      "shelf": true,
+      "times": [],
+      "cands": [
+        {"src": "synth", "db": 0.0, "exists": true, "bad": null, "extra": false, "folder": false, "source": ""},
+        {"src": "guide_done/b.wav", "db": 1.0, "exists": true, "bad": null, "extra": false, "folder": true, "source": ""}
+      ]
+    }
+  ]
+}

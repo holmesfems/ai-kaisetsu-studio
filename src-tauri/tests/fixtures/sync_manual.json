@@ -1,0 +1,25 @@
+{
+  "sync": [
+    {
+      "cue": 1,
+      "keyword": "こんにちは",
+      "t": 0.25,
+      "t_end": 0.8,
+      "method": "manual"
+    },
+    {
+      "cue": 2,
+      "keyword": "二行目",
+      "t": 1.55,
+      "t_end": 1.6
+    },
+    {
+      "cue": 3,
+      "keyword": "さいご",
+      "t": 2.0,
+      "t_end": 2.5,
+      "method": "whisper",
+      "whisper_t": 1.9
+    }
+  ]
+}

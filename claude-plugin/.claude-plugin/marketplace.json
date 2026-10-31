@@ -1,0 +1,12 @@
+{
+  "name": "ak-studio-local",
+  "owner": {
+    "name": "holmesfems"
+  },
+  "plugins": [
+    {
+      "name": "ak-studio",
+      "source": "./ak-studio"
+    }
+  ]
+}

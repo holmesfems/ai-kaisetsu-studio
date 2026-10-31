@@ -1,0 +1,6 @@
+{
+  "name": "ak-studio",
+  "version": "0.5.0",
+  "description": "AK Studio（解説動画の編集アプリ）と Claude Code をつなぐ：画面からのメッセージでセッションを動かし、プロンプトの上に編集中の状況を出す。声のアクセントのスキル（voisona-accent）も入っている",
+  "types": "./types/index.d.ts"
+}

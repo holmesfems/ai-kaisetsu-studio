@@ -1,0 +1,55 @@
+{
+  "_説明": "VoiSona Talk の素の既定の声。話者ごとに voice_name と global_parameters（pitch はセント、volume は dB、style_weights は voices API の style_names の順）を持つ。自分の声の値は presets/voisona_presets.json（ビルドで埋め込まれ、あればこの既定の代わりに使われる）に置く。line_gap はセリフとセリフの間隔（秒）。",
+  "pauses": {
+    "、": 0.15,
+    "。": 0.2,
+    "default": 0.2
+  },
+  "speakers": {
+    "トーク1": {
+      "voice_name": "sato-sasara_ja_JP",
+      "global_parameters": {
+        "volume": 0.0,
+        "speed": 1.0,
+        "pitch": 0,
+        "alp": 0.0,
+        "intonation": 1.0,
+        "style_weights": [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ]
+      },
+      "_style_names": [
+        "Fine(元気)",
+        "Normal(普通)",
+        "Angry(怒り)",
+        "Sad(哀しみ)"
+      ]
+    },
+    "トーク2": {
+      "voice_name": "sato-sasara_ja_JP",
+      "global_parameters": {
+        "volume": 0.0,
+        "speed": 1.0,
+        "pitch": 0,
+        "alp": 0.0,
+        "intonation": 1.0,
+        "style_weights": [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ]
+      },
+      "_style_names": [
+        "Fine(元気)",
+        "Normal(普通)",
+        "Angry(怒り)",
+        "Sad(哀しみ)"
+      ]
+    }
+  },
+  "line_gap": 0.3
+}

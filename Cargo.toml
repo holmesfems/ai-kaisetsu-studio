@@ -1,0 +1,14 @@
+[workspace]
+members = ["src-tauri", "mcp", "crates/ak-proto"]
+resolver = "2"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4

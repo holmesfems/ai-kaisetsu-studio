@@ -1,0 +1,67 @@
+name: CI
+
+# 公開のリポジトリだけで走る（非公開の控えのリポジトリでは枠を使わない）。
+# 非公開の kit（fx-private/）は無いので、公開側だけの確かめになる。
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    if: github.repository == 'holmesfems/ai-kaisetsu-studio'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      # kit が無い状態の確かめ。pip で入れた kit が混ざらないようにする（tools/test_py.py）
+      AK_PUBLIC_TEST: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: fxkit/pyproject.toml
+
+      # 演出のワーカーとテストが使う Python の依存（fxkit の dependencies と、台本の読み書きの pyyaml）
+      - name: Python の依存を入れる
+        run: |
+          python -m pip install -e fxkit --config-settings editable_mode=compat
+          python -m pip install pyyaml
+
+      # テストが書体のファイルを直接読む（fxkit/fxcore.py の FONT_FILES は C:/Windows/Fonts/ の固定の名前）。
+      # ランナーに無いものだけ入れる。Noto Sans JP は engine/test_kit.py・test_wrap.py、Cascadia Mono は engine/test_scene_label.py が読む
+      - name: 書体を入れる（Noto Sans JP・Noto Sans SC・Cascadia Mono。無いものだけ）
+        shell: pwsh
+        run: |
+          $fonts = "C:\Windows\Fonts"
+          $base = "https://github.com/google/fonts/raw/main/ofl"
+          if (-not (Test-Path "$fonts\NotoSansJP-VF.ttf")) { Invoke-WebRequest "$base/notosansjp/NotoSansJP%5Bwght%5D.ttf" -OutFile "$fonts\NotoSansJP-VF.ttf" }
+          if (-not (Test-Path "$fonts\NotoSansSC-VF.ttf")) { Invoke-WebRequest "$base/notosanssc/NotoSansSC%5Bwght%5D.ttf" -OutFile "$fonts\NotoSansSC-VF.ttf" }
+          if (-not (Test-Path "$fonts\CascadiaMono.ttf")) {
+            Invoke-WebRequest "https://github.com/microsoft/cascadia-code/releases/download/v2407.24/CascadiaCode-2407.24.zip" -OutFile "$env:RUNNER_TEMP\cascadia.zip"
+            Expand-Archive "$env:RUNNER_TEMP\cascadia.zip" -DestinationPath "$env:RUNNER_TEMP\cascadia"
+            Copy-Item "$env:RUNNER_TEMP\cascadia\ttf\CascadiaMono.ttf" "$fonts\CascadiaMono.ttf"
+          }
+          foreach ($f in "NotoSansJP-VF.ttf", "NotoSansSC-VF.ttf", "CascadiaMono.ttf", "bahnschrift.ttf") {
+            if (-not (Test-Path "$fonts\$f")) { throw "$f がありません" }
+          }
+
+      - run: npm ci
+
+      - run: npm run test:all

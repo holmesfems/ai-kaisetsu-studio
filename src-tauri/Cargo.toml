@@ -1,0 +1,43 @@
+[package]
+name = "ak-studio"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "AK Studio (AI Kaisetsu Studio) - video editor for narrated explainer videos"
+
+[lib]
+name = "ak_studio_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+axum = "0.8"
+anyhow = "1"
+parking_lot = "0.12"
+crossbeam-channel = "0.5"
+lz4_flex = "0.11"
+jpeg-encoder = { version = "0.6", features = ["simd"] }
+zune-jpeg = "0.4"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp"] }
+notify = "8"
+rayon = "1"
+hound = "3"
+ureq = { version = "2", features = ["json"] }
+regex = "1"
+chrono = "0.4"
+rand = "0.8"
+dirs = "5"
+base64 = "0.22"
+serde_yaml_ng = "0.10.0"
+ak-proto = { path = "../crates/ak-proto" }
+ts-rs = { version = "12", features = ["serde-json-impl"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_Security"] }

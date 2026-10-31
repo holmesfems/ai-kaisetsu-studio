@@ -1,0 +1,10 @@
+/target
+/node_modules
+/dist
+*.log
+__pycache__/
+*.egg-info/
+/fxkit/build/
+/.playwright-mcp/
+/.claude/worktrees/
+/fx-private/
