@@ -338,7 +338,7 @@ pub fn run() {
                 core_exit.subs.shutdown();
                 core_exit.voice.stop();
                 // AK Studio を 2 つ起動しているとき、もう片方の接続先を消さないよう、自分が書いたときだけ消す
-                let sess = crate::settings::data_dir().join("session.json");
+                let sess = crate::settings::session_file();
                 let mine = std::fs::read_to_string(&sess)
                     .ok()
                     .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())

@@ -52,7 +52,7 @@ python -m pip install -e fxkit --config-settings editable_mode=compat   # compat
 
 1. **Rust 本体（`src-tauri/`）** — `core/` の `Core`（`mod.rs` に定義、微調整 `overrides.rs`・見張り `watch.rs`・合成と先読み `compose.rs`・推敲案の採否 `proposals.rs`）が回（エピソード）の状態をすべて持つ。台本・微調整・合成・先読み・ファイルの見張り（notify）。
    - 画面とは 2 経路: Tauri の `invoke`（`app/commands.rs`、画面側は `ui/src/io/api.ts` の `call`）と、カスタム URI スキーム `akf://`（Windows では `http://akf.localhost/…`、`lib.rs`）でコマの JPEG・クリップの PNG・音声・素材ファイルを返す。変更の通知は Tauri のイベント（`on(...)`）
-   - Claude 用のローカル HTTP API（axum、`app/api.rs` / `agent.rs`）を `127.0.0.1:47815`（使用中なら空き番号）で立てる。ポートと合言葉は `%LOCALAPPDATA%\ak-studio\session.json`
+   - Claude 用のローカル HTTP API（axum、`app/api.rs` / `agent.rs`）を `127.0.0.1:47815`（使用中なら空き番号）で立てる。ポートと合言葉は `%USERPROFILE%\.ak-studio\session.json`（`ak_proto::session`。Claude のデスクトップアプリの中からは `%LOCALAPPDATA%` に古い写しが重なって見えるので、そこには置かない）
 2. **Python ワーカー（`engine/akfx_worker.py`）** — 各回の `fx/<名前>_fx.py`（fxkit / fxparts）を読み込んで演出のコマを描く。シーン札・画面から足す演出・効果音の割り当ては kit（`ak_kit` / `ak_kit_basic`）経由。字幕の絵（`subtitle`）とフォント一覧（`fonts`）もここ。
    - Rust に `include_str!` で埋め込まれ、起動時に `%LOCALAPPDATA%\ak-studio\engine\` に書き出して使う（`settings/embed.rs`）。**直したら Rust を作り直さないと反映されない**
    - `render/engine.rs` がワーカーのプール（急ぎ・後回しの 2 列、固まったら止める・落ちたら作り直す）

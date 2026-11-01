@@ -142,6 +142,21 @@ pub fn data_dir() -> PathBuf {
     d
 }
 
+/// Claude に接続先を知らせるファイル（`%USERPROFILE%\.ak-studio\session.json`。%LOCALAPPDATA% に置かない理由は ak_proto::session）。
+/// ホームが分からなければ data_dir に置く
+pub fn session_file() -> PathBuf {
+    let p = ak_proto::session::session_file().unwrap_or_else(|| data_dir().join("session.json"));
+    if let Some(d) = p.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    p
+}
+
+/// 前の版が %LOCALAPPDATA%\ak-studio に書いていた接続先。今の本体はここに書かないので、残っていれば古い合言葉
+pub fn legacy_session_file() -> PathBuf {
+    data_dir().join("session.json")
+}
+
 /// 起動時に画面へ出す知らせ（設定の読み込み・辞書の作成の結果）。release ではコンソールが無いので、画面の通知に出す
 #[derive(Clone, Debug)]
 pub struct Notice {

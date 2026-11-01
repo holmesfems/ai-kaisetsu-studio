@@ -142,7 +142,7 @@ Claude には、印ごとの座標・区間・下にある演出クリップ／�
 印は回の `studio/marks.json` に保存される。
 
 ローカル HTTP API（Claude 用）は `127.0.0.1:47815`（使用中なら空いている番号）。ポートと合言葉は
-`%LOCALAPPDATA%\ak-studio\session.json`。外から画面のチャットに書くには `POST /api/chat/user {"text": …}`。
+`%USERPROFILE%\.ak-studio\session.json`。外から画面のチャットに書くには `POST /api/chat/user {"text": …}`。
 
 ## ファイル
 

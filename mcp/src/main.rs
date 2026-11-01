@@ -5,7 +5,7 @@
 //!
 //! 登録:  claude mcp add -s user ak-studio -- <この exe のパス>
 //! 起動:  claude --dangerously-load-development-channels server:ak-studio
-//! AK Studio の場所（ポートと合言葉）は %LOCALAPPDATA%\ak-studio\session.json から読む。
+//! AK Studio の場所（ポートと合言葉）は %USERPROFILE%\.ak-studio\session.json から読む（ak_proto::session）。
 
 // tools() の json! が長くなったので、マクロの展開の深さを広げる
 #![recursion_limit = "256"]
@@ -103,7 +103,7 @@ struct Session {
 }
 
 fn session() -> Option<Session> {
-    let p = dirs::data_local_dir()?.join("ak-studio").join("session.json");
+    let p = ak_proto::session::session_file()?;
     let v: Value = serde_json::from_str(&std::fs::read_to_string(p).ok()?).ok()?;
     Some(Session { port: v["port"].as_u64()? as u16, token: v["token"].as_str()?.to_string() })
 }
