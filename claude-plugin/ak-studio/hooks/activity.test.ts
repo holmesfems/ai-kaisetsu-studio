@@ -1,6 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { describeToolCall as d, shouldSend } from './activity.ts'
+import { describeToolCall as d, hasPerson, shouldSend } from './activity.ts'
+
+test('見に行くのは人がいるセッション（CLI・デスクトップアプリ）だけ', () => {
+  assert.equal(hasPerson(true, ['terminal']), true)
+  // デスクトップアプリ: isInteractive は false でも、描く先がある
+  assert.equal(hasPerson(false, ['desktop']), true)
+  // -p の実行: どこにも描かない
+  assert.equal(hasPerson(false, []), false)
+})
 
 test('ak-studio のツール', () => {
   assert.equal(d({ tool: 'mcp__ak-studio__script_read' }), '台本を読んでいます')
