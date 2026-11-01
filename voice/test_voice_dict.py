@@ -53,7 +53,87 @@ def main():
         assert vt.load_dict() == [] and not (td / "new").exists()
         del os.environ["AK_VOICE_DICT_OLD"]
         del os.environ["AK_VOICE_DICT"]
+    relay()
     print("ok")
+
+
+def relay():
+    """道具は辞書を中継（/api/dict）から読み書きする。中継が無ければ None・書けなければ RuntimeError。"""
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    store = {"entries": [{"surface": "博士", "reading": "ハカセ", "accent": "lhh"}], "fail": False}
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def reply(self, code, obj):
+            b = json.dumps(obj, ensure_ascii=False).encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+
+        def do_GET(self):
+            if store["fail"]:
+                return self.reply(500, {"error": "壊れた辞書"})
+            self.reply(200, {"entries": store["entries"]})
+
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            if store["fail"]:
+                return self.reply(500, {"error": "書けない"})
+            store["entries"] = body["entries"]
+            self.reply(200, {"entries": store["entries"]})
+
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    port = srv.server_address[1]
+    try:
+        assert vt.relay_base(port) == f"http://127.0.0.1:{port}"
+        os.environ["AK_VOICE_PORT"] = str(port)
+        assert vt.relay_base() == f"http://127.0.0.1:{port}"  # 引数が無ければ環境変数
+        del os.environ["AK_VOICE_PORT"]
+        assert vt.relay_dict(port) == store["entries"]
+        new = store["entries"] + [{"surface": "聖聆", "reading": "セーレー", "accent": "lhhh"}]
+        assert vt.save_relay_dict(new, port) == new and store["entries"] == new
+
+        # 中継がエラーを返したら、None（中継なし）ではなく RuntimeError にする（黙ってファイルへ回らない）
+        store["fail"] = True
+        for f in (lambda: vt.relay_dict(port), lambda: vt.save_relay_dict([], port)):
+            try:
+                f()
+                raise AssertionError("中継のエラーで例外にならなかった")
+            except RuntimeError as e:
+                assert "辞書" in str(e), e
+        assert store["entries"] == new
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+    # つながらない: 読みは None、書きは RuntimeError
+    assert vt.relay_dict(port, timeout=1) is None
+    try:
+        vt.save_relay_dict([], port, timeout=1)
+        raise AssertionError("中継が無いのに例外にならなかった")
+    except RuntimeError as e:
+        assert "届きません" in str(e), e
+
+    # voice_review は中継につながらなければ止まる（写しの辞書を黙って読み書きしない）。--dict-file ならファイル
+    import argparse
+    import voice_review as vrv
+    try:
+        vrv.read_dict(argparse.Namespace(dict_file=False, port=port))
+        raise AssertionError("中継が無いのに止まらなかった")
+    except SystemExit as e:
+        assert "--dict-file" in str(e.code), e.code
+    with tempfile.TemporaryDirectory() as td:
+        os.environ["AK_VOICE_DICT"] = str(Path(td) / "d.json")
+        vt.save_dict([{"surface": "x", "reading": "エックス"}])
+        assert vrv.read_dict(argparse.Namespace(dict_file=True, port=port)) == [{"surface": "x", "reading": "エックス"}]
+        del os.environ["AK_VOICE_DICT"]
 
 
 if __name__ == "__main__":

@@ -6,11 +6,13 @@
 import json
 import os
 import re
+import urllib.error
+import urllib.request
 import wave
 from pathlib import Path
 
-__all__ = ["dict_path", "load_dict", "save_dict", "kata", "relevant", "apply_reading", "load_presets",
-           "clean_params", "clean_global", "apply_speakers", "wav_duration"]
+__all__ = ["dict_path", "load_dict", "save_dict", "relay_base", "relay_dict", "save_relay_dict", "kata", "relevant",
+           "apply_reading", "load_presets", "clean_params", "clean_global", "apply_speakers", "wav_duration"]
 
 
 # ---------- 辞書（表記 → 読み＋アクセント） ----------
@@ -42,6 +44,41 @@ def save_dict(entries):
     finally:
         if tmp.exists():
             tmp.unlink()
+
+
+# ---------- 辞書を声の中継から読み書きする（voice_review.py などの道具用。中継は使わない） ----------
+# Claude のデスクトップアプリ（MSIX）の中から %LOCALAPPDATA% に書くと、パッケージの写しにだけ入り、
+# AK Studio と中継が読む本物の辞書には入らない（同じパスに見えるので気づけない）。
+# 中継は AK Studio が起動したプロセスで写しの外にいるので、道具は中継に読み書きさせる。
+def relay_base(port=None):
+    """声の中継の URL。ポートは引数 → 環境変数 AK_VOICE_PORT → 8765（AK Studio の既定の voice_port）。"""
+    return f"http://127.0.0.1:{port or os.environ.get('AK_VOICE_PORT') or 8765}"
+
+
+def relay_dict(port=None, timeout=3):
+    """動いている声の中継から辞書を読む。中継につながらなければ None。中継がエラーを返したら RuntimeError。"""
+    url = f"{relay_base(port)}/api/dict"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as r:
+            return json.load(r)["entries"]
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"声の中継から辞書を読めませんでした: {e.read().decode('utf-8', 'replace')}") from e
+    except (urllib.error.URLError, OSError):
+        return None
+
+
+def save_relay_dict(entries, port=None, timeout=10):
+    """声の中継に辞書を書かせ、書いた後の辞書を返す。届かない・書けなかったら RuntimeError。"""
+    url = f"{relay_base(port)}/api/dict"
+    body = json.dumps({"entries": entries}, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.load(r)["entries"]
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"声の中継が辞書を書けませんでした: {e.read().decode('utf-8', 'replace')}") from e
+    except (urllib.error.URLError, OSError) as e:
+        raise RuntimeError(f"声の中継に届きませんでした（{relay_base(port)}）: {e}") from e
 
 
 def kata(s):

@@ -20,7 +20,7 @@ AK Studio のリポジトリの `voice\` と同じもの。AK Studio が埋め�
 | `voice_review.py build` | Claude の案（draft.json）→ 確認画面用の `<回>\voice_review\proposal.json` |
 | `accent_review.html` | 確認画面（サーバーの `/review`）。▶今／▶案の試聴、モーラのクリックで高低、単語の間のクリックで区切り、採用／不採用／保留、メモ。`result.json` に自動保存 |
 | `voice_review.py apply` | `result.json` の採用分を、バックアップしてから `voice_dict.json` と `script\_voice.json`（行の id が鍵）に書き込む |
-| `voice_dict.json` | 辞書（全部の回で共通）。置き場所は `%LOCALAPPDATA%\ak-studio\voice_dict.json`（環境変数 `AK_VOICE_DICT` で変えられる。道具のフォルダには無い）`{"entries":[{"surface","reading","accent"}]}` |
+| `voice_dict.json` | 辞書（全部の回で共通）。置き場所は `%LOCALAPPDATA%\ak-studio\voice_dict.json`（環境変数 `AK_VOICE_DICT` で変えられる。道具のフォルダには無い）`{"entries":[{"surface","reading","accent"}]}`。**道具は中継の `/api/dict` で読み書きする**（下の「気をつけること」） |
 | `voisona_tts.py` / `voice_server.py` | 合成とサーバー（`voice_server.py` は `/` を `/review` へ転送する）。辞書の当て方は `apply_accent` |
 
 draft.json の形と細かい仕様は `voice_review.py` の先頭の説明にある。
@@ -68,6 +68,7 @@ python voice_review.py build --project <回のフォルダ> <回のフォルダ>
 5. AK Studio は `_voice.json` が変わると自動で読み込むので、タブを開き直す必要はない。「AK Studio で、変わった行を作り直し（再合成）てください」と伝える。辞書（voice_dict.json）を書き込んだときは、辞書の言葉を含む行も解析し直しになる。
 
 ## 気をつけること
+- **辞書のファイルを直接開いたり書いたりしない**。Claude のデスクトップアプリの中から `%LOCALAPPDATA%` に書くと、AK Studio の読まない写し（`Packages\Claude_…\LocalCache\Local`）にだけ入る。同じパスに見えるので気づけない。辞書を見るときは `curl -s localhost:8765/api/dict`、書くときは `voice_review.py apply --write`（どちらも中継が本物を読み書きする）。中継につながらないと `voice_review.py` は止まる。そのときは AK Studio で回を開いてもらう（`--dict-file` でファイルを直接使うのは、Claude のアプリの外で動かすときだけ）。
 - **手直し済みの行（今のセリフ・話者で _voice.json に手直しがある行）には辞書が効かない**。辞書の言葉を含む手直し済みの行は、行の案にも辞書の分を当てる（build が自動でやる）。採用すると、その行の前の手直しは上書きになる。
 - 行ごとの**抑揚（intonation）と音素の長さ**は、ユーザーが AK Studio の「長さ」タブ・抑揚のつまみで決めて `script\_voice_params.json`（これも行の id が鍵）に入る。このスキルでは触らない（案にも出さない）。ピッチ曲線は VoiSona の API が受け付けないので調整できない。
 - **読みを変える辞書**（R2D2 → アールツーディーツー、一見 → イチゲン など）は、解析し直さないと当たらない。その言葉を含む行の手直しは、辞書を書き込んで解析し直してから次の回で出す。
