@@ -28,6 +28,10 @@ draft.json の形（台本は script/*.yaml。行は台本の行の id で指す
   読みを変える辞書（R2D2 → アールツーディーツー など）は解析し直さないと当たらないので、その行の手直しは解析し直してから。
 
 voice_cache は回のフォルダのものを使う。サーバーを別のフォルダで起動していたときは --cache で足す。
+
+辞書は声の中継（AK Studio が回を開くと動く。--port、無ければ AK_VOICE_PORT・8765）から読み書きする。
+Claude のアプリの中から %LOCALAPPDATA% の辞書を直接書くと、AK Studio の読まない写しにだけ入るため。
+中継が動いていなければ止まる。辞書のファイルを直接使うときは --dict-file（AK_VOICE_DICT か %LOCALAPPDATA%）。
 """
 import argparse
 import json
@@ -103,10 +107,21 @@ def example(proj, ln):
             "edited": edited, "analyzed_text": cur if edited else None}
 
 
+def read_dict(args):
+    """今の辞書。ふだんは声の中継から（AK Studio と同じ本物の辞書）。--dict-file のときだけファイルから。"""
+    if args.dict_file:
+        return vt.load_dict()
+    entries = vt.relay_dict(args.port)
+    if entries is None:
+        sys.exit(f"声の中継（{vt.relay_base(args.port)}）につながりません。AK Studio で回を開いてからやり直してください"
+                 "（辞書のファイルを直接使うときは --dict-file）")
+    return entries
+
+
 def build(args):
     proj = Project(args.project, args.cache)
     draft = json.loads(Path(args.draft).read_text(encoding="utf-8"))
-    entries = vt.load_dict()
+    entries = read_dict(args)
     draft_dict = draft.get("dict", [])
     for e in draft_dict:
         if e.get("accent") and len(e["accent"]) != mora_count(e["reading"]):
@@ -152,11 +167,23 @@ def build(args):
     print("エディタの「アクセント確認」（http://localhost:8765/review）で開いてください")
 
 
-def backup(path, folder):
+def backup_dir(folder):
     bk = folder / "_backup" / f"claude-{datetime.now():%Y%m%d-%H%M%S}"  # エディタの _backup と同じ形
     bk.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(path, bk / path.name)
-    return bk / path.name
+    return bk
+
+
+def backup(path, folder):
+    dst = backup_dir(folder) / path.name
+    shutil.copy2(path, dst)
+    return dst
+
+
+def backup_dict(entries, folder):
+    """書き込む前の辞書を、回の script/_backup に控える（%LOCALAPPDATA% の側は写しに入ることがあるので回の側に）。"""
+    dst = backup_dir(folder) / "voice_dict.json"
+    dst.write_text(json.dumps({"entries": entries}, ensure_ascii=False, indent=1), encoding="utf-8")
+    return dst
 
 
 def apply(args):
@@ -167,7 +194,7 @@ def apply(args):
     res = json.loads(res_file.read_text(encoding="utf-8"))
     label = {"ok": "採用", "ng": "不採用", "hold": "保留"}
 
-    entries = vt.load_dict()
+    entries = read_dict(args)
     new_dict = list(entries)
     print(f"確認の結果（{res.get('saved', '')}）")
     for e in res.get("dict", []):
@@ -203,9 +230,11 @@ def apply(args):
         print("（--write を付けると書き込みます）")
         return
     if n_dict:
-        if vt.dict_path().exists():
-            print(f"  辞書のバックアップ → {backup(vt.dict_path(), vt.dict_path().parent)}")
-        vt.save_dict(new_dict)
+        print(f"  辞書のバックアップ → {backup_dict(entries, proj.script)}")
+        if args.dict_file:
+            vt.save_dict(new_dict)
+        else:  # AK Studio は辞書のファイルを見張っているので、中継が書けば読み直す
+            vt.save_relay_dict(new_dict, args.port)
     if n_voice:
         if proj.voice_file.exists():
             print(f"  _voice.json のバックアップ → {backup(proj.voice_file, proj.script)}")
@@ -223,6 +252,9 @@ def main():
     a = sub.add_parser("apply", help="確認の結果（result.json）の採用分を書き込む")
     a.add_argument("--project", default=".")
     a.add_argument("--write", action="store_true")
+    for p in (b, a):
+        p.add_argument("--port", type=int, help="声の中継のポート（無ければ AK_VOICE_PORT・8765）")
+        p.add_argument("--dict-file", action="store_true", help="中継を通さず、辞書のファイルを直接読み書きする")
     args = ap.parse_args()
     sys.stdout.reconfigure(errors="replace")
     try:

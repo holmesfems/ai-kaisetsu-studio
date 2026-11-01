@@ -158,11 +158,20 @@ def main():
     ap.add_argument("--words", action="store_true", help="単語の一覧（表記・読み・高低・回数）も付ける")
     ap.add_argument("--cache", action="append", default=[],
                     help="ほかに探す voice_cache（サーバーを別のフォルダで起動していたとき。何回でも指定できる）")
+    ap.add_argument("--port", type=int, help="声の中継のポート（辞書を読む。無ければ AK_VOICE_PORT・8765）")
     args = ap.parse_args()
     proj = Path(args.project).resolve()
     script_dir = proj / "script"
     caches = [proj / "voice_cache"] + [Path(c).resolve() for c in args.cache]
-    entries = vt.load_dict()
+    # 辞書は声の中継から（Claude のアプリの中からファイルを開くと、AK Studio の読まない写しを読むことがある）
+    try:
+        entries = vt.relay_dict(args.port)
+    except RuntimeError as e:
+        sys.exit(str(e))
+    if entries is None:
+        print(f"声の中継（{vt.relay_base(args.port)}）につながらないので、辞書はファイル（{vt.dict_path()}）から読みます",
+              file=sys.stderr)
+        entries = vt.load_dict()
     try:
         presets = episode_presets(script_dir)
         blocks = ak.read_blocks(script_dir)
