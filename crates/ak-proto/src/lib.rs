@@ -11,6 +11,7 @@ pub mod http;
 pub mod marks;
 pub mod schema;
 pub mod sebank;
+pub mod session;
 
 pub use error::{ApiError, ErrorCode};
 pub use sebank::{SeBank, SeCand, SeKind};

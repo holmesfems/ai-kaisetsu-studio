@@ -13,7 +13,8 @@
 //   （ターンの始まり・終わり、ツールの呼び出し、考え中・返事を書き中）。画面のチャットの「考え中」の表示になる（issue 旧#51）
 // - /studio … 状況を見る、/studio on・off … つなぐ・切る（別の回のフォルダからでもつなげる）
 //
-// AK Studio の場所と合言葉は %LOCALAPPDATA%\ak-studio\session.json。
+// AK Studio の場所と合言葉は %USERPROFILE%\.ak-studio\session.json（%LOCALAPPDATA% は Claude のデスクトップアプリの中から
+// 古い写しが見えることがあるので使わない。ak-proto の session.rs）。
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
@@ -71,10 +72,10 @@ const OLD_APP = '（AK Studio の本体が古いため、添えた画像・画�
 const isNotice = (m: any) => m?.ctx?.kind === 'cancel_notice'
 
 async function session($: any): Promise<Sess | null> {
-  const base = await $.env.get('LOCALAPPDATA')
+  const base = (await $.env.get('USERPROFILE')) || (await $.env.get('HOME'))
   if (!base) return null
   try {
-    const s = JSON.parse(await $.fs.read(`${base}/ak-studio/session.json`))
+    const s = JSON.parse(await $.fs.read(`${base}/.ak-studio/session.json`))
     return s && s.port && s.token ? { port: s.port, token: s.token } : null
   } catch {
     return null

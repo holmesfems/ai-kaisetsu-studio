@@ -1,5 +1,5 @@
 //! Claude（MCP サーバー ak-studio-mcp）向けのローカル HTTP API。127.0.0.1 だけで待ち受け、合言葉（トークン）が要る。
-//! ポートとトークンは %LOCALAPPDATA%\ak-studio\session.json に書き、MCP サーバーがそれを読む。
+//! ポートとトークンは %USERPROFILE%\.ak-studio\session.json（settings::session_file）に書き、MCP サーバーと Mod がそれを読む。
 
 use ak_proto::http::{ApplyReq, ClipIdReq, ClipsQ, ExportReq, GuideCoordsReq, GuidePatch, GuideStillReq, MarkAddReq, MarkResolveReq, MarksQ, MediaPatch, MemoReq, OvReq, ProposeReq, ReplyReq, SeSet, SheetReq, StillReq, UiFocus};
 use super::error::{api_error, coded, no_project};
@@ -130,7 +130,12 @@ pub async fn serve(core: Arc<Core>) {
     };
     let port = listener.local_addr().map(|a| a.port()).unwrap_or(0);
     *core.api_port.lock() = port;
-    let sess = crate::settings::data_dir().join("session.json");
+    let sess = crate::settings::session_file();
+    // 前の版の置き場所に残った接続先は古い合言葉なので消す（古い MCP・Mod が読んで 401 にならないように）
+    let legacy = crate::settings::legacy_session_file();
+    if legacy != sess {
+        let _ = std::fs::remove_file(&legacy);
+    }
     if let Err(e) = crate::settings::write_atomic(
         &sess,
         serde_json::to_string_pretty(&json!({"port": port, "token": core.api_token, "pid": std::process::id()}))
