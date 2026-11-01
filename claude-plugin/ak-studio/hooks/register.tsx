@@ -151,7 +151,12 @@ async function tick($: any) {
   if (S.busy) return
   S.busy = true
   try {
-    if (!hasPerson(S.interactive, await $.session.surfaces())) return
+    if (!hasPerson(S.interactive, await $.session.surfaces())) {
+      // 画面が外れたら切る（作業状況を知らせ続けない）。manual は残し、つながり直したら戻す
+      S.linked = false
+      S.sess = null
+      return
+    }
     const s = await session($)
     const st = s ? await api($, s, '/api/status') : null
     if (!s || !st || !st.project) {
