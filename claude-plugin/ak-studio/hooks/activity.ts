@@ -108,6 +108,14 @@ export function describeToolCall(e: ToolCall): string | null {
   return e.agentId ? `（サブエージェント）${s}` : s
 }
 
+/**
+ * AK Studio を見に行くか。人がいるセッションだけ（-p の実行が画面のメッセージを横取りしないように）。
+ * デスクトップアプリのセッションは SDK から動くので isInteractive が false。描く先（desktop など）があれば人がいる
+ */
+export function hasPerson(isInteractive: boolean, surfaces: readonly string[]): boolean {
+  return isInteractive || surfaces.length > 0
+}
+
 /** 知らせの間引き: 同じ文は送らない・短い間隔では送らない（ただし working の切り替えは通す） */
 export type Sent = { working: boolean; text: string; at: number }
 

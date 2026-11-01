@@ -19,7 +19,7 @@ import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
 import type { StudioView } from '../types'
-import { describeToolCall, shouldSend } from './activity.ts'
+import { describeToolCall, hasPerson, shouldSend } from './activity.ts'
 import type { Sent } from './activity.ts'
 
 const view = atom({ plugin: 'ak-studio', key: 'view' } as const, null as StudioView | null)
@@ -51,6 +51,7 @@ function promptText(ms: any[]): string {
 // セッションの中だけの状態（Mod を読み直したら最初から）
 const S = {
   cwd: '',
+  interactive: false, // CLI の REPL か（デスクトップアプリでは false。hasPerson）
   started: 0, // つないだ時刻（AK Studio は、いちばん新しくつないだセッションにだけ渡す）
   linked: false,
   manual: null as boolean | null, // /studio on・off で決めたとき
@@ -150,6 +151,7 @@ async function tick($: any) {
   if (S.busy) return
   S.busy = true
   try {
+    if (!hasPerson(S.interactive, await $.session.surfaces())) return
     const s = await session($)
     const st = s ? await api($, s, '/api/status') : null
     if (!s || !st || !st.project) {
@@ -214,14 +216,14 @@ async function tick($: any) {
 export const register: Register = (on) => {
   on('session.start', async ($, e, next) => {
     S.cwd = e.cwd
-    if (e.isInteractive) {
-      await $.command.register({
-        name: 'studio',
-        description: 'AK Studio：状況を見る／on でつなぐ・off で切る',
-        argumentHint: '[on|off]',
-      })
-      $.clock.every(1500, () => tick($))
-    }
+    S.interactive = e.isInteractive
+    await $.command.register({
+      name: 'studio',
+      description: 'AK Studio：状況を見る／on でつなぐ・off で切る',
+      argumentHint: '[on|off]',
+    })
+    // デスクトップアプリは isInteractive が false で、画面は後からつながる。人がいるかは tick ごとに見る
+    $.clock.every(1500, () => tick($))
     return next(e)
   })
 
