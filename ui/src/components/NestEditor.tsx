@@ -215,6 +215,8 @@ function NestMonitor({ g, nest, o, sel, setSel, showFx }: MonProps) {
   const playing = useS((s) => s.playing);
   const overrides = useS((s) => s.overrides);
   const doc = useS((s) => s.project?.doc);
+  // doc の変更は 80ms 後に本体へ送る（editDoc）ので、doc だけで描き直すと本体はまだ前の値。送り終えた backRev でも描き直す
+  const backRev = useS((s) => s.backRev);
   const engineGen = useS((s) => s.engine?.status.gen);
   const fps = useS((s) => s.desc?.fps ?? 30);
   const stage = useRef<HTMLDivElement>(null);
@@ -305,7 +307,7 @@ function NestMonitor({ g, nest, o, sel, setSel, showFx }: MonProps) {
     if (playing) return;
     const id = setTimeout(() => draw(t), 16);
     return () => clearTimeout(id);
-  }, [t, playing, overrides, doc, draw, engineGen, vx0, vy0, vw, vh, dispW]);
+  }, [t, playing, overrides, doc, draw, engineGen, vx0, vy0, vw, vh, dispW, backRev]);
 
   // 今見えているクリップの枠（キャンバスの座標 → 画面）
   const rectOf = (c: MediaClip, d = { dx: 0, dy: 0, s: 1 }) => {
