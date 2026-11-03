@@ -289,7 +289,7 @@ impl VideoSource {
             let mut buf = vec![0u8; n];
             if let Err(e) = d.out.read_exact(&mut buf) {
                 g.list.remove(k);
-                // fps で割って読む素材の最後のコマは ffmpeg の fps フィルタが出さないので、以後は 1 つ前のコマで代える（旧#153）。
+                // fps で割って読む素材の最後のコマは ffmpeg 7 までの fps フィルタが出さないので、以後は 1 つ前のコマで代える（旧#153。9 は出す）。
                 // コマ番号で読む素材（passthrough）は最後のコマも出るので、読めなければ本当の失敗としてそのまま返す
                 if self.pts().is_none() && idx > 0 && idx == self.frame_count() - 1 {
                     self.last_readable.store(idx - 1, std::sync::atomic::Ordering::Relaxed);
@@ -981,8 +981,9 @@ duration {d}
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
-    /// 旧#153: 最後のコマ（ffmpeg の fps フィルタが出さない）は、1 つ前のコマで代える。
-    /// 新しい読み手で引いても、手前から順に読んでいる読み手で引いても、書き出し・モニターのどちらでも
+    /// 旧#153: 最後のコマを ffmpeg の fps フィルタが出さないとき（ffmpeg 7 まで）は、1 つ前のコマで代える。
+    /// ffmpeg 9 は最後のコマも出すので、そのコマが来る。どちらでも、新しい読み手で引いても、手前から順に
+    /// 読んでいる読み手で引いても、書き出し・モニターのどちらでも同じコマになる
     #[test]
     fn last_frame_falls_back_to_previous() {
         let Some(ff) = test_ffmpeg() else {
@@ -995,17 +996,21 @@ duration {d}
         assert_eq!(last, 29);
         let before = VideoSource::new(&ff, p).unwrap().frame_opt(last - 1, 64, 48, false).unwrap();
         let fresh = VideoSource::new(&ff, p).unwrap().frame_opt(last, 64, 48, false).unwrap();
-        assert_eq!(max_diff(&fresh, &before), 0, "新しい読み手");
+        // 最後のコマが読めた（ffmpeg 9）なら、1 つ前のコマとは別の絵
+        let readable = max_diff(&fresh, &before) != 0;
+        eprintln!("最後のコマ: {}", if readable { "読める" } else { "1 つ前で代える" });
         let seq = VideoSource::new(&ff, p).unwrap();
         seq.frame_opt(25, 64, 48, false).unwrap();
-        assert_eq!(max_diff(&seq.frame_opt(last, 64, 48, false).unwrap(), &before), 0, "順に読んでいる読み手");
+        assert_eq!(max_diff(&seq.frame_opt(last, 64, 48, false).unwrap(), &fresh), 0, "順に読んでいる読み手");
         // 範囲の外も最後のコマ
-        assert_eq!(max_diff(&seq.frame_opt(99, 64, 48, false).unwrap(), &before), 0, "範囲の外");
-        // モニターの読み方: 1 つ前のコマ（覚えた JPEG の絵）と同じ
+        assert_eq!(max_diff(&seq.frame_opt(99, 64, 48, false).unwrap(), &fresh), 0, "範囲の外");
+        // モニターの読み方: 書き出しと同じコマ（JPEG の誤差だけ）。代えるときは 1 つ前のコマ（覚えた JPEG の絵）と同じ
         let mon = VideoSource::new(&ff, p).unwrap();
         let a = mon.frame_opt(last, 64, 48, true).unwrap();
-        assert_eq!(max_diff(&a, &mon.frame_opt(last - 1, 64, 48, true).unwrap()), 0, "モニター");
-        assert!(max_diff(&a, &before) <= 40, "モニターも 1 つ前のコマ（JPEG の誤差だけ）");
+        if !readable {
+            assert_eq!(max_diff(&a, &mon.frame_opt(last - 1, 64, 48, true).unwrap()), 0, "モニター");
+        }
+        assert!(max_diff(&a, &fresh) <= 40, "モニターも書き出しと同じコマ（JPEG の誤差だけ）");
         // 読めないと分かったら、もう最後のコマのために読み手を作り直さない
         let n = mon.starts.load(std::sync::atomic::Ordering::Relaxed);
         for _ in 0..3 {
