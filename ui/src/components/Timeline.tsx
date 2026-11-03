@@ -279,9 +279,9 @@ export default function Timeline() {
     );
   }
 
-  const seekFromEvent = (e: React.PointerEvent | PointerEvent, el: HTMLElement) => {
+  const seekFromEvent = (e: React.PointerEvent | PointerEvent, el: HTMLElement, x = e.clientX) => {
     const r = el.getBoundingClientRect();
-    const t = clamp((e.clientX - r.left) / useS.getState().zoom, 0, total());
+    const t = clamp((x - r.left) / useS.getState().zoom, 0, total());
     player.seek(snap(t, snapOn && !(e as PointerEvent).altKey, useS.getState().zoom));
   };
 
@@ -966,23 +966,29 @@ export default function Timeline() {
                 const el = e.currentTarget;
                 el.setPointerCapture(e.pointerId);
                 scrubbing.current = true;
-                seekFromEvent(e, el);
-                // 端の外にポインタがある間は少しずつスクロールし、ポインタの下へ再生位置を合わせ直す
+                // 端の外にポインタがある間は少しずつスクロールし、ポインタの下へ再生位置を合わせ直す。
+                // 再生位置は見えている範囲に収める（端の外で離しても、再生位置が画面の外に残らない）
                 let last: React.PointerEvent | PointerEvent = e;
                 let raf = 0;
+                const seek = () => {
+                  const sc = scroll.current;
+                  if (!sc) return seekFromEvent(last, el);
+                  const r = sc.getBoundingClientRect();
+                  seekFromEvent(last, el, clamp(last.clientX, r.left + HEAD, r.left + sc.clientWidth - 1));
+                };
                 const tick = () => {
                   const sc = scroll.current;
-                  if (sc) {
-                    const r = sc.getBoundingClientRect();
-                    const d = edgeScrollStep(last.clientX, r.left + HEAD, r.left + sc.clientWidth);
-                    const before = sc.scrollLeft;
-                    if (d) sc.scrollLeft += d;
-                    if (sc.scrollLeft !== before) seekFromEvent(last, el);
-                  }
+                  if (!sc || !el.isConnected) return up(); // ドラッグ中にタイムラインが閉じた
+                  const r = sc.getBoundingClientRect();
+                  const d = edgeScrollStep(last.clientX, r.left + HEAD, r.left + sc.clientWidth);
+                  const before = sc.scrollLeft;
+                  if (d) sc.scrollLeft += d;
+                  if (sc.scrollLeft !== before) seek();
                   raf = requestAnimationFrame(tick);
                 };
+                seek();
                 raf = requestAnimationFrame(tick);
-                const mv = (ev: PointerEvent) => { last = ev; seekFromEvent(ev, el); };
+                const mv = (ev: PointerEvent) => { last = ev; seek(); };
                 const up = () => {
                   scrubbing.current = false;
                   cancelAnimationFrame(raf);
