@@ -113,3 +113,14 @@ export function wheelAct(
   const unit = e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? (e.shiftKey ? page.h : page.w) : 1; // 行・ページ単位をピクセルに
   return { kind: e.shiftKey ? "v" : "h", d: d * unit };
 }
+
+/**
+ * ドラッグ中にポインタが見えている範囲（left〜right、画面の px）の外に出たとき、1 コマ（requestAnimationFrame 1 回）で
+ * スクロールする量（px。左は負）。はみ出しが大きいほど速く、上限 max で止める。範囲の中なら 0。
+ * 見えなくなった再生位置へ一気に飛ばすと、ポインタが端に残ったまま次の位置を拾って最後まで走ってしまうため、少しずつ送る
+ */
+export function edgeScrollStep(x: number, left: number, right: number, max = 30): number {
+  if (x > right) return Math.min(max, Math.max(2, (x - right) * 0.3));
+  if (x < left) return -Math.min(max, Math.max(2, (left - x) * 0.3));
+  return 0;
+}
