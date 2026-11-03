@@ -583,13 +583,21 @@ input[type="checkbox"] {
 .ln .meta .warn {
   color: var(--warn);
 }
-.notes {
+textarea.notes {
+  display: block;
+  width: calc(100% - 48px);
+  margin: 4px 0 0 48px;
   color: var(--dim);
   font-size: 12px;
-  white-space: pre-wrap;
-  padding: 4px 8px 0 44px;
+  line-height: 1.5;
+  resize: none;
+  overflow: hidden;
   border-left: 2px solid var(--line);
-  margin-left: 4px;
+  border-radius: 0 3px 3px 0;
+  background: var(--w-02);
+}
+textarea.notes::placeholder {
+  color: var(--dim2);
 }
 
 /* アクセント */
