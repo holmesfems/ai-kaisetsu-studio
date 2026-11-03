@@ -5,7 +5,7 @@ import { editDoc, editScript, exportTalk, patchOverride, refreshCache, refreshSe
 import { player } from "../io/player";
 import { addMedia, addTrack } from "../state/media";
 import { moveLineTo } from "../logic/voice";
-import { SPEAKERS, clamp, spClass, tc, wheelAct } from "../logic/util";
+import { SPEAKERS, clamp, edgeScrollStep, spClass, tc, wheelAct } from "../logic/util";
 import type { Group, Override, Track } from "../types";
 import type { GuideState } from "../gen/GuideState";
 import { DRIFT_HELP, driftText, useCueDrift } from "./drift";
@@ -106,6 +106,8 @@ export default function Timeline() {
   const [talkBusy, setTalkBusy] = useState(false);
   const drift = useCueDrift();
   const scroll = useRef<HTMLDivElement>(null);
+  // 目盛りをドラッグして再生位置を動かしている間（見えなくなった再生位置へ一気に飛ばさない）
+  const scrubbing = useRef(false);
   const T = total();
   const W = HEAD + T * zoom + 200;
   // 動画の終わりの印と、最後の字幕が消えてから終わりまでの余白（声の終わり + 1 秒などで決まる）
@@ -150,7 +152,7 @@ export default function Timeline() {
   // 止まっているときも、再生位置が見えていなければそこまでスクロール（Claude が画面を動かしたときなど）
   const tNow = useS((s) => (s.playing ? -1 : s.t));
   useEffect(() => {
-    if (tNow < 0) return;
+    if (tNow < 0 || scrubbing.current) return;
     const sc = scroll.current;
     if (!sc) return;
     const x = HEAD + tNow * zoom;
@@ -963,11 +965,34 @@ export default function Timeline() {
                 if (e.button !== 0) return;
                 const el = e.currentTarget;
                 el.setPointerCapture(e.pointerId);
+                scrubbing.current = true;
                 seekFromEvent(e, el);
-                const mv = (ev: PointerEvent) => seekFromEvent(ev, el);
-                const up = () => { el.removeEventListener("pointermove", mv); el.removeEventListener("pointerup", up); };
+                // 端の外にポインタがある間は少しずつスクロールし、ポインタの下へ再生位置を合わせ直す
+                let last: React.PointerEvent | PointerEvent = e;
+                let raf = 0;
+                const tick = () => {
+                  const sc = scroll.current;
+                  if (sc) {
+                    const r = sc.getBoundingClientRect();
+                    const d = edgeScrollStep(last.clientX, r.left + HEAD, r.left + sc.clientWidth);
+                    const before = sc.scrollLeft;
+                    if (d) sc.scrollLeft += d;
+                    if (sc.scrollLeft !== before) seekFromEvent(last, el);
+                  }
+                  raf = requestAnimationFrame(tick);
+                };
+                raf = requestAnimationFrame(tick);
+                const mv = (ev: PointerEvent) => { last = ev; seekFromEvent(ev, el); };
+                const up = () => {
+                  scrubbing.current = false;
+                  cancelAnimationFrame(raf);
+                  el.removeEventListener("pointermove", mv);
+                  el.removeEventListener("pointerup", up);
+                  el.removeEventListener("lostpointercapture", up);
+                };
                 el.addEventListener("pointermove", mv);
                 el.addEventListener("pointerup", up);
+                el.addEventListener("lostpointercapture", up);
               }}
             >
               {ticks}
