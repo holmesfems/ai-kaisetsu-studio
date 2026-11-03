@@ -248,6 +248,54 @@ const LineRow = React.memo(function LineRow({ l, b, n, speakers }: { l: Line; b:
   );
 });
 
+/**
+ * ブロックの末尾: 「＋ 行」などのボタンの列（children）と、ブロックのメモ（YAML の notes。Claude 向けの演出の参考。読み上げない）。
+ * メモが空なら「＋ メモ」で開く（1 つの部品で持つので、書き始めても欄が作り直されずフォーカスが外れない）
+ */
+function BlockFoot({ bi, notes, children }: { bi: number; notes: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const ta = useRef<HTMLTextAreaElement>(null);
+  const show = open || !!notes;
+  useEffect(() => autosize(ta.current), [notes, show]);
+  return (
+    <>
+      <div className="row" style={{ padding: "2px 0 0 44px" }}>
+        {children}
+        {!show && (
+          <button
+            className="ghost"
+            title="ブロックのメモ（Claude 向けの演出の参考。読み上げません）"
+            onClick={() => {
+              setOpen(true);
+              setTimeout(() => ta.current?.focus(), 0);
+            }}
+          >
+            ＋ メモ
+          </button>
+        )}
+      </div>
+      {show && (
+        <textarea
+          ref={ta}
+          className="notes"
+          rows={1}
+          value={notes}
+          spellCheck={false}
+          placeholder="ブロックのメモ（例: 画面に出すもの・数値）。読み上げません"
+          onChange={(e) => {
+            const v = e.target.value;
+            editScript((s) => { s.blocks[bi].notes = v; }, false);
+            autosize(e.target);
+          }}
+          onBlur={() => {
+            if (!notes) setOpen(false);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
 export default function ScriptPanel() {
   const script = useS((s) => s.script);
   const project = useS((s) => s.project);
@@ -373,7 +421,7 @@ export default function ScriptPanel() {
               n++;
               return <LineRow key={l.id} l={l} b={b} n={n} speakers={speakers} />;
             })}
-            <div className="row" style={{ padding: "2px 0 0 44px" }}>
+            <BlockFoot bi={bi} notes={b.notes}>
               <button
                 className="ghost"
                 onClick={() => {
@@ -388,8 +436,7 @@ export default function ScriptPanel() {
               >
                 ＋ 行
               </button>
-            </div>
-            {b.notes && <div className="notes">{b.notes}</div>}
+            </BlockFoot>
           </div>
         ))}
         <button
