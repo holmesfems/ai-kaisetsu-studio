@@ -557,6 +557,14 @@ impl Core {
         self.st.read().as_ref().and_then(|p| p.script.as_ref().map(|s| s.script.clone()))
     }
 
+    /// 今の台本。台本（script/）の無い回では空の台本から始める（画面の「台本を作成」と同じ。保存したときに script/ ができる）。
+    /// 回を開いていなければエラー
+    pub fn script_or_new(&self) -> Result<Script> {
+        let st = self.st.read();
+        let ps = st.as_ref().ok_or_else(crate::app::error::no_project)?;
+        Ok(ps.script.as_ref().map(|s| s.script.clone()).unwrap_or_default())
+    }
+
     pub(crate) fn mark_self_write(&self, p: &Path) {
         self.self_writes.lock().insert(p.to_path_buf(), Instant::now());
     }

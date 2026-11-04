@@ -198,13 +198,17 @@ async fn script(State(c): S, h: HeaderMap) -> Response {
     guard!(c, h);
     match c.script() {
         Some(s) => ok(crate::script::ops::numbered(&s, &c.layout_guard())),
-        None => err(StatusCode::NOT_FOUND, crate::msg::NO_SCRIPT),
+        None => err(StatusCode::NOT_FOUND, crate::msg::NO_SCRIPT_HINT),
     }
 }
 
 async fn propose(State(c): S, h: HeaderMap, Json(r): Json<ProposeReq>) -> Response {
     guard!(c, h);
-    let Some(s) = c.script() else { return err(StatusCode::NOT_FOUND, crate::msg::NO_SCRIPT) };
+    // 台本の無い回でも出せる（block_add を採用すると台本ができる）
+    let s = match c.script_or_new() {
+        Ok(s) => s,
+        Err(e) => return err_e(&e, ErrorCode::NoProject),
+    };
     match crate::script::ops::resolve_items(&s, &r.items) {
         Ok(items) => {
             let title = if r.title.is_empty() { "台本の推敲案".to_string() } else { r.title };
@@ -221,7 +225,7 @@ async fn propose(State(c): S, h: HeaderMap, Json(r): Json<ProposeReq>) -> Respon
 async fn apply(State(c): S, h: HeaderMap, Json(r): Json<ApplyReq>) -> Response {
     guard!(c, h);
     blocking(move || {
-        let s = c.script().ok_or_else(|| anyhow::anyhow!(crate::msg::NO_SCRIPT))?;
+        let s = c.script_or_new()?;
         let items = crate::script::ops::resolve_items(&s, &r.items)?;
         let title = if r.title.is_empty() { "Claude による直接修正".to_string() } else { r.title };
         let p = c.hub.add_proposal(&title, &r.note, items);
@@ -672,7 +676,7 @@ async fn export(State(c): S, h: HeaderMap, Json(r): Json<ExportReq>) -> Response
 async fn memo(State(c): S, h: HeaderMap, Json(r): Json<MemoReq>) -> Response {
     guard!(c, h);
     blocking(move || {
-        let mut s = c.script().ok_or_else(|| anyhow::anyhow!(crate::msg::NO_SCRIPT))?;
+        let mut s = c.script_or_new()?;
         s.memo = r.memo;
         let v = c.save_script(s)?;
         c.emit("script", json!({"script": v["script"], "external": true}));

@@ -724,4 +724,26 @@ mod propose_tests {
         assert!(found, "控えが残っていない");
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    /// 台本の無い回（#22）: 空の台本に block_add を当てて保存すると、script/ に .yaml と _order.json ができ、開き直しても読める
+    #[test]
+    fn 空の台本から_block_add_で台本ができる() {
+        let dir = std::env::temp_dir().join(format!("aks-empty-{}", std::process::id())).join("script");
+        let _ = std::fs::remove_dir_all(dir.parent().unwrap());
+        let mut s = Script::default();
+        let mut it = resolve_items(&s, &[
+            json!({"kind": "block_add", "title": "序論", "lines": [{"sp": "トーク1", "text": "はじめ"}]}),
+            json!({"kind": "block_add", "title": "本編", "lines": [{"sp": "トーク2", "text": "つぎ"}]}),
+        ]).unwrap();
+        accept(&mut s, &mut it, &[0, 1]);
+        let mut st = crate::script::ScriptStore::open(&dir).unwrap();
+        st.save(s).unwrap();
+        let order: Vec<String> = serde_json::from_str(&std::fs::read_to_string(dir.join("_order.json")).unwrap()).unwrap();
+        assert_eq!(order, ["序論.yaml", "本編.yaml"]);
+        let again = crate::script::ScriptStore::open(&dir).unwrap();
+        let titles: Vec<_> = again.script.blocks.iter().map(|b| b.title.as_str()).collect();
+        assert_eq!(titles, ["序論", "本編"]);
+        assert_eq!(again.script.blocks[1].lines[0].text, "つぎ");
+        let _ = std::fs::remove_dir_all(dir.parent().unwrap());
+    }
 }

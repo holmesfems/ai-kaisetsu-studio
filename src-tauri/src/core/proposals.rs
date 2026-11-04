@@ -15,7 +15,8 @@ impl Core {
             Some(i) => vec![i],
             None => (0..p.items.len()).filter(|&i| p.items[i].status == "pending").collect(),
         };
-        let mut script = self.script().ok_or_else(|| anyhow!(crate::msg::NO_SCRIPT))?;
+        // 台本の無い回でも、block_add などを採用すれば空の台本から作る（保存で script/ ができる）
+        let mut script = self.script_or_new()?;
         let mut errors = vec![];
         for i in targets {
             let earlier = p.items[..i.min(p.items.len())].to_vec();
