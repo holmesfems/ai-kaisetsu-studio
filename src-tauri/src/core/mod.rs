@@ -557,6 +557,24 @@ impl Core {
         self.st.read().as_ref().and_then(|p| p.script.as_ref().map(|s| s.script.clone()))
     }
 
+    /// 今の台本。台本（script/）の無い回では空の台本から始める（画面の「台本を作成」と同じ。保存したときに script/ ができる）。
+    /// 置かれた台本のファイルを見張りがまだ開いていなければ、ここで開く（空の台本で保存して、置かれたファイルを消さないため）。
+    /// 回を開いていなければエラー
+    pub fn script_or_new(&self) -> Result<Script> {
+        let mut st = self.st.write();
+        let ps = st.as_mut().ok_or_else(crate::app::error::no_project)?;
+        if ps.script.is_none() && watch::has_script_files(&ps.project.script_dir()) {
+            let mut store = ScriptStore::open_with(&ps.project.script_dir(), &crate::script::speakers_file(&self.settings.get().voice_engine))?;
+            self.emit_script_notices(&mut store);
+            let s = store.script.clone();
+            ps.script = Some(store);
+            drop(st);
+            self.emit("script", json!({"script": s, "external": true}));
+            return Ok(s);
+        }
+        Ok(ps.script.as_ref().map(|s| s.script.clone()).unwrap_or_default())
+    }
+
     pub(crate) fn mark_self_write(&self, p: &Path) {
         self.self_writes.lock().insert(p.to_path_buf(), Instant::now());
     }

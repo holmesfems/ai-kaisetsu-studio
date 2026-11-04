@@ -203,9 +203,38 @@ impl Core {
         }
         if script {
             // 読めなければ（書きかけの _voice.json など）少し待ってもう一度。それでもだめなら知らせて前の中身のまま
+            // 開いたときに script/ が無かった回は、台本のファイルが置かれたら台本を開く（手で書いた・ほかの道具が書いた）
             for attempt in 0..2 {
                 let mut st = self.st.write();
-                let Some(store) = st.as_mut().and_then(|p| p.script.as_mut()) else { break };
+                let Some(ps) = st.as_mut() else { break };
+                if ps.script.is_none() {
+                    if !has_script_files(&script_dir) {
+                        break;
+                    }
+                    let speakers = crate::script::speakers_file(&self.settings.get().voice_engine);
+                    match crate::script::ScriptStore::open_with(&script_dir, &speakers) {
+                        Ok(mut store) => {
+                            self.emit_script_notices(&mut store);
+                            let s = serde_json::to_value(&store.script).unwrap_or(Value::Null);
+                            ps.script = Some(store);
+                            drop(st);
+                            self.emit("script", json!({"script": s, "external": true}));
+                            self.refresh_voice(true);
+                        }
+                        Err(e) if attempt == 0 => {
+                            drop(st);
+                            self.engine.push_log(format!("置かれた台本を開けませんでした（もう一度試します）: {e:#}"));
+                            std::thread::sleep(Duration::from_millis(600));
+                            continue;
+                        }
+                        Err(e) => {
+                            drop(st);
+                            self.notice_err("置かれた台本を開けませんでした", &e);
+                        }
+                    }
+                    break;
+                }
+                let store = ps.script.as_mut().unwrap();
                 if !store.changed_on_disk() {
                     break;
                 }
@@ -268,7 +297,39 @@ impl Core {
     }
 }
 
+/// script/ に台本のファイル（.yaml・古い .md）があるか。_order.json だけ・空のフォルダでは台本を開かない
+/// （画面の「台本を作成」が出たままにする）
+pub(super) fn has_script_files(dir: &Path) -> bool {
+    std::fs::read_dir(dir).is_ok_and(|rd| {
+        rd.flatten().any(|e| {
+            let p = e.path();
+            p.is_file() && p.extension().is_some_and(|x| x.eq_ignore_ascii_case("yaml") || x.eq_ignore_ascii_case("md"))
+        })
+    })
+}
+
 /// 見張るフォルダ（回のフォルダ直下の script・files・studio と、タイムラインのある fx）
 fn watched_dirs(p: &Project) -> [PathBuf; 4] {
     [p.script_dir(), p.fx_dir(), p.root.join("files"), p.root.join("studio")]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::has_script_files;
+
+    #[test]
+    fn 台本のファイルがあるときだけ台本を開く() {
+        let dir = std::env::temp_dir().join(format!("aks-watch-script-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(!has_script_files(&dir), "フォルダが無い");
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(!has_script_files(&dir), "空のフォルダ");
+        std::fs::write(dir.join("_order.json"), "[]").unwrap();
+        assert!(!has_script_files(&dir), "_order.json だけ");
+        std::fs::write(dir.join("序論.yaml"), "title: 序論
+lines: []
+").unwrap();
+        assert!(has_script_files(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
