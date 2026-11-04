@@ -299,7 +299,7 @@ impl Core {
 
 /// script/ に台本のファイル（.yaml・古い .md）があるか。_order.json だけ・空のフォルダでは台本を開かない
 /// （画面の「台本を作成」が出たままにする）
-fn has_script_files(dir: &Path) -> bool {
+pub(super) fn has_script_files(dir: &Path) -> bool {
     std::fs::read_dir(dir).is_ok_and(|rd| {
         rd.flatten().any(|e| {
             let p = e.path();

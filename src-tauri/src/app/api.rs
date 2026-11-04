@@ -198,7 +198,7 @@ async fn script(State(c): S, h: HeaderMap) -> Response {
     guard!(c, h);
     match c.script() {
         Some(s) => ok(crate::script::ops::numbered(&s, &c.layout_guard())),
-        None => err(StatusCode::NOT_FOUND, crate::msg::NO_SCRIPT_HINT),
+        None => err(StatusCode::NOT_FOUND, crate::msg::NO_SCRIPT),
     }
 }
 
