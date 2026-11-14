@@ -181,11 +181,23 @@ pub struct OverlayFrame {
     pub h: u32,
     pub rect: Option<[u32; 4]>,
     pub rgba: Vec<u8>,
+    /// RecWindow のクリップごとの上の層（下から順）。RecWindow が無いコマでは空。
+    /// いちばん下の層（rect・rgba）→ 層ごとにそのキーのネストの素材 → その層、の順に重ねる
+    pub layers: Vec<OverlayLayer>,
     pub ms: f64,
 }
 
+/// 演出のコマの層 1 枚（RecWindow を描く直前から次の層の前まで）
+#[derive(Clone)]
+pub struct OverlayLayer {
+    /// その RecWindow のクリップのキー
+    pub key: String,
+    pub rect: Option<[u32; 4]>,
+    pub rgba: Vec<u8>,
+}
+
 impl OverlayFrame {
-    /// コマ全体の RGBA（rect の外は透明）
+    /// コマ全体の RGBA（rect の外は透明）。層があれば下から順に重ねて 1 枚にする
     pub fn to_full(&self) -> Vec<u8> {
         let mut full = vec![0u8; self.w as usize * self.h as usize * 4];
         if let Some(bb) = self.rect {
@@ -196,8 +208,34 @@ impl OverlayFrame {
                 full[di..di + bw * 4].copy_from_slice(&self.rgba[si..si + bw * 4]);
             }
         }
+        for l in self.layers.iter() {
+            let Some(bb) = l.rect else { continue };
+            let (x, y, bw, bh) = (bb[0] as usize, bb[1] as usize, bb[2] as usize, bb[3] as usize);
+            for row in 0..bh {
+                for col in 0..bw {
+                    let di = ((y + row) * self.w as usize + x + col) * 4;
+                    let si = (row * bw + col) * 4;
+                    over_pixel(&mut full[di..di + 4], &l.rgba[si..si + 4]);
+                }
+            }
+        }
         full
     }
+}
+
+/// 通常の（straight alpha の）source-over で、dst の上に src を重ねる
+pub(crate) fn over_pixel(dst: &mut [u8], src: &[u8]) {
+    let sa = src[3] as f32 / 255.0;
+    if sa <= 0.0 {
+        return;
+    }
+    let da = dst[3] as f32 / 255.0;
+    let oa = sa + da * (1.0 - sa);
+    for i in 0..3 {
+        let c = (src[i] as f32 * sa + dst[i] as f32 * da * (1.0 - sa)) / oa;
+        dst[i] = c.round().clamp(0.0, 255.0) as u8;
+    }
+    dst[3] = (oa * 255.0).round().clamp(0.0, 255.0) as u8;
 }
 
 pub struct FrameReq {
@@ -813,38 +851,71 @@ fn read_msg(r: &mut impl Read) -> Result<(Value, Vec<u8>)> {
     Ok((h, data))
 }
 
-fn parse_frame(h: &Value, data: Vec<u8>) -> Result<OverlayFrame> {
-    if h.get("ok").and_then(|v| v.as_bool()) != Some(true) {
-        bail!("{}", h.get("error").and_then(|v| v.as_str()).unwrap_or("演出のコマを描けませんでした"));
-    }
-    let w = h["w"].as_u64().unwrap_or(0);
-    let hh = h["h"].as_u64().unwrap_or(0);
-    let rect = match h.get("rect") {
-        None | Some(Value::Null) => {
-            if !data.is_empty() {
-                bail!("演出のコマの返事が壊れています（rect が無いのにデータが {} バイトあります）", data.len());
-            }
-            None
-        }
+/// ヘッダの rect（null か [x, y, 幅, 高さ]）を調べて、データのバイト数と一緒に返す。`what` はエラーの頭に付ける呼び名（コマ本体は空、層は「層 1 の」）。
+fn parse_rect(v: Option<&Value>, w: u64, hh: u64, what: &str) -> Result<(Option<[u32; 4]>, usize)> {
+    match v {
+        None | Some(Value::Null) => Ok((None, 0)),
         Some(b) => {
             let a: Vec<u64> = b
                 .as_array()
                 .filter(|a| a.len() == 4)
                 .and_then(|a| a.iter().map(|v| v.as_u64()).collect())
-                .ok_or_else(|| anyhow!("演出のコマの返事が壊れています（rect）"))?;
+                .ok_or_else(|| anyhow!("演出のコマの返事が壊れています（{what}rect）"))?;
             let (x, y, bw, bh) = (a[0], a[1], a[2], a[3]);
             if x.saturating_add(bw) > w || y.saturating_add(bh) > hh {
-                bail!("演出のコマの返事が壊れています（rect [{x}, {y}, {bw}, {bh}] がコマ {w}x{hh} からはみ出しています）");
+                bail!("演出のコマの返事が壊れています（{what}rect [{x}, {y}, {bw}, {bh}] がコマ {w}x{hh} からはみ出しています）");
             }
             let want = bw.saturating_mul(bh).saturating_mul(4);
-            if data.len() as u64 != want {
-                bail!("演出のコマの返事が壊れています（データが {} バイトで、rect から求めた {want} バイトと合いません）", data.len());
-            }
-            Some([x as u32, y as u32, bw as u32, bh as u32])
+            Ok((Some([x as u32, y as u32, bw as u32, bh as u32]), want as usize))
         }
+    }
+}
+
+/// データの先頭から `want` バイトを切り出す。足りなければ壊れている
+fn take_bytes(data: &mut Vec<u8>, want: usize, what: &str) -> Result<Vec<u8>> {
+    if data.len() < want {
+        bail!("演出のコマの返事が壊れています（{what}データが {} バイトしかなく、rect から求めた {want} バイトに足りません）", data.len());
+    }
+    let rest = data.split_off(want);
+    Ok(std::mem::replace(data, rest))
+}
+
+fn parse_frame(h: &Value, mut data: Vec<u8>) -> Result<OverlayFrame> {
+    if h.get("ok").and_then(|v| v.as_bool()) != Some(true) {
+        bail!("{}", h.get("error").and_then(|v| v.as_str()).unwrap_or("演出のコマを描けませんでした"));
+    }
+    let w = h["w"].as_u64().unwrap_or(0);
+    let hh = h["h"].as_u64().unwrap_or(0);
+    let (rect, want) = parse_rect(h.get("rect"), w, hh, "")?;
+    if rect.is_none() && !data.is_empty() && h.get("layers").is_none() {
+        bail!("演出のコマの返事が壊れています（rect が無いのにデータが {} バイトあります）", data.len());
+    }
+    // 層（RecWindow ごと。無ければ 1 枚だけ）。データは「いちばん下の層 → 各層」の順
+    let heads: &[Value] = match h.get("layers") {
+        None | Some(Value::Null) => &[],
+        Some(v) => v.as_array().map(|a| a.as_slice()).ok_or_else(|| anyhow!("演出のコマの返事が壊れています（layers）"))?,
     };
+    if heads.is_empty() && data.len() != want {
+        if rect.is_none() {
+            bail!("演出のコマの返事が壊れています（rect が無いのにデータが {} バイトあります）", data.len());
+        }
+        bail!("演出のコマの返事が壊れています（データが {} バイトで、rect から求めた {want} バイトと合いません）", data.len());
+    }
+    let base = take_bytes(&mut data, want, "")?;
+    let mut layers = Vec::with_capacity(heads.len());
+    for (i, lh) in heads.iter().enumerate() {
+        let what = format!("層 {} の", i + 1);
+        let key = lh.get("key").and_then(|k| k.as_str())
+            .ok_or_else(|| anyhow!("演出のコマの返事が壊れています（層 {} の key）", i + 1))?;
+        let (lrect, lwant) = parse_rect(lh.get("rect"), w, hh, &what)?;
+        let rgba = take_bytes(&mut data, lwant, &what)?;
+        layers.push(OverlayLayer { key: key.to_string(), rect: lrect, rgba });
+    }
+    if !data.is_empty() {
+        bail!("演出のコマの返事が壊れています（データが {} バイト余っています）", data.len());
+    }
     let (w, hh) = (w as u32, hh as u32);
-    Ok(OverlayFrame { w, h: hh, rect, rgba: data, ms: h["ms"].as_f64().unwrap_or(0.0) })
+    Ok(OverlayFrame { w, h: hh, rect, rgba: base, layers, ms: h["ms"].as_f64().unwrap_or(0.0) })
 }
 
 /// 埋め込みの fxkit を書き出せなかった理由（次に書き出せたら消える）
@@ -1078,6 +1149,53 @@ mod tests {
         assert!(parse_frame(&h(Value::Null), vec![0; 4]).is_err());
         // ok でない返事はそのまま理由を返す
         assert!(parse_frame(&serde_json::json!({"ok": false, "error": "x"}), vec![]).is_err());
+    }
+
+    #[test]
+    fn to_full_stacks_layers() {
+        let f = OverlayFrame {
+            w: 4, h: 1, rect: Some([0, 0, 2, 1]), rgba: vec![255, 0, 0, 255, 255, 0, 0, 255],
+            layers: vec![OverlayLayer { key: "k".into(), rect: Some([1, 0, 2, 1]), rgba: vec![0, 0, 255, 255, 0, 0, 255, 255] }],
+            ms: 0.0,
+        };
+        assert_eq!(f.to_full(), vec![255, 0, 0, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 0, 0]);
+    }
+
+    /// 層つきの返事: いちばん下の層 → 各層の順にデータを切り分ける。層の rect・長さ・余りも調べる
+    #[test]
+    fn parse_frame_splits_layers() {
+        let h = |layers: Value| serde_json::json!({"ok": true, "w": 100, "h": 50, "rect": [0, 0, 2, 1], "layers": layers});
+        let mut data = vec![1u8; 8];
+        data.extend(vec![2u8; 12]);
+        let f = parse_frame(&h(serde_json::json!([{"key": "RecWindow@c1#1", "rect": [10, 20, 3, 1]}, {"key": "RecWindow@c2#1", "rect": null}])), data).unwrap();
+        assert_eq!(f.rect, Some([0, 0, 2, 1]));
+        assert_eq!(f.rgba, vec![1u8; 8]);
+        assert_eq!(f.layers.len(), 2);
+        assert_eq!((f.layers[0].key.as_str(), f.layers[0].rect, f.layers[0].rgba.clone()), ("RecWindow@c1#1", Some([10, 20, 3, 1]), vec![2u8; 12]));
+        assert_eq!((f.layers[1].rect, f.layers[1].rgba.len()), (None, 0));
+        // 下の層が空でも、層のデータは読める
+        let f = parse_frame(&serde_json::json!({"ok": true, "w": 100, "h": 50, "rect": null,
+            "layers": [{"key": "k", "rect": [0, 0, 1, 1]}]}), vec![5; 4]).unwrap();
+        assert_eq!((f.rect, f.layers[0].rgba.clone()), (None, vec![5; 4]));
+        // layers が無い返事は今までどおり（層なし）
+        let f = parse_frame(&serde_json::json!({"ok": true, "w": 100, "h": 50, "rect": null}), vec![]).unwrap();
+        assert!(f.layers.is_empty());
+        let ok = |layers: Value, n: usize| parse_frame(&h(layers), vec![0; n]);
+        let one = serde_json::json!([{"key": "k", "rect": [10, 20, 3, 1]}]);
+        // 長さが合わない（足りない・余る）
+        let e = ok(one.clone(), 8 + 11).err().unwrap();
+        assert!(format!("{e}").contains("壊れています"), "{e}");
+        let e = ok(one.clone(), 8 + 13).err().unwrap();
+        assert!(format!("{e}").contains("壊れています"), "{e}");
+        assert!(ok(one.clone(), 8 + 12).is_ok());
+        // 層の rect がはみ出す・形が違う・key が無い
+        let e = ok(serde_json::json!([{"key": "k", "rect": [99, 0, 3, 1]}]), 8 + 12).err().unwrap();
+        assert!(format!("{e}").contains("壊れています") && format!("{e}").contains("層 1"), "{e}");
+        assert!(ok(serde_json::json!([{"key": "k", "rect": [1, 2, 3]}]), 8).is_err());
+        assert!(ok(serde_json::json!([{"rect": null}]), 8).is_err());
+        assert!(ok(serde_json::json!("x"), 8).is_err());
+        // 下の層のデータが足りない
+        assert!(parse_frame(&h(one), vec![0; 4]).is_err());
     }
 
     fn desc_json(extra: Value) -> Value {

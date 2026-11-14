@@ -128,7 +128,11 @@ impl Core {
         let mut fr = Rgb { w, h, data: [12u8, 18, 28].repeat((w * h) as usize) };
         let Some(doc) = self.view_doc() else { return Ok(fr) };
         let speaking = self.speaking_at(t);
-        for layer in layers::layer_order(&doc.tracks) {
+        let order = layers::layer_order(&doc.tracks);
+        // 演出のコマは、見えているときは GuideAndNests で先に 1 回だけ取る（層に出てくる RecWindow のネストを、演出の中の位置に挟むため）
+        let mut fx_ov: Option<Option<Arc<CachedOverlay>>> = None;
+        let has_fx = order.contains(&Layer::Fx);
+        for layer in order {
             match layer {
                 Layer::GuideAndNests => {
                     // 攻略動画の戦闘画面のレイヤーは演出の下。読めない・組み立てられないときは、演出の失敗と同じ出し方で知らせる
@@ -141,8 +145,13 @@ impl Core {
                             None => return Err(anyhow!(msg)),
                         }
                     }
-                    // RecWindow に差し込んだ録画は演出の下（窓の枠・チップ・テロップが上に来る）
-                    self.draw_nests(&mut fr, &doc, t, scale, video_cache);
+                    // RecWindow に差し込んだ録画は、その RecWindow の z の位置（演出のコマの層の間）に出る。
+                    // 演出のコマに出てこない RecWindow（隠れている・演出なし・演出のコマが失敗）のネストだけ、ここ（演出の下）に出す
+                    if has_fx && fx_ov.is_none() {
+                        fx_ov = Some(fx_frame(ovf, t, fx_err.as_deref_mut())?);
+                    }
+                    let keys = fx_ov.as_ref().and_then(|o| o.as_ref()).map(|o| o.layer_keys()).unwrap_or_default();
+                    self.draw_nests_where(&mut fr, &doc, t, scale, video_cache, &|k| layers::nest_below_fx(k, &keys));
                 }
                 Layer::Media(i) => {
                     for c in doc.tracks[i].clips.iter() {
@@ -160,10 +169,21 @@ impl Core {
                     }
                 }
                 Layer::Fx => {
-                    if let Some(ov) = fx_frame(ovf, t, fx_err.as_deref_mut())? {
+                    if fx_ov.is_none() {
+                        fx_ov = Some(fx_frame(ovf, t, fx_err.as_deref_mut())?);
+                    }
+                    if let Some(Some(ov)) = &fx_ov {
+                        // いちばん下の層 → （RecWindow ごとに）そのネストの素材 → その層
                         if let Some(bb) = ov.rect {
                             let src = Rgba { w: bb[2], h: bb[3], data: ov.rgba() };
                             blend(&mut fr, &src, bb[0] as i64, bb[1] as i64, 1.0, 1.0);
+                        }
+                        for l in ov.layers.iter() {
+                            self.draw_nests_where(&mut fr, &doc, t, scale, video_cache, &|k| k == l.key);
+                            if let Some(bb) = l.rect {
+                                let src = Rgba { w: bb[2], h: bb[3], data: l.packed.rgba() };
+                                blend(&mut fr, &src, bb[0] as i64, bb[1] as i64, 1.0, 1.0);
+                            }
                         }
                     }
                 }
@@ -239,14 +259,23 @@ impl Core {
         Ok(())
     }
 
-    /// RecWindow に差し込んだ録画（ネスト）を描く。窓が見えている間だけ、窓とキャンバスの重なりの中だけに。
+    /// RecWindow に差し込んだ録画（ネスト）を全部描く（録画トラックの書き出し用）。窓が見えている間だけ、窓とキャンバスの重なりの中だけに。
     pub fn draw_nests(&self, fr: &mut Rgb, doc: &crate::project::ProjectDoc, t: f64, scale: f64, video_cache: bool) {
+        self.draw_nests_where(fr, doc, t, scale, video_cache, &|_| true);
+    }
+
+    /// ネストのうち、キー（RecWindow のクリップのキー）が want に当たるものだけを描く。
+    fn draw_nests_where(&self, fr: &mut Rgb, doc: &crate::project::ProjectDoc, t: f64, scale: f64, video_cache: bool,
+                        want: &dyn Fn(&str) -> bool) {
         if doc.nests.is_empty() {
             return;
         }
         let Some(desc) = self.desc() else { return };
         let ov = self.view_overrides();
         for (key, nest) in doc.nests.iter() {
+            if !want(key) {
+                continue;
+            }
             let Some(g) = desc.groups.iter().find(|g| &g.key == key) else { continue };
             let Some((bx, wa)) = rec_window(g, nest, &ov, t) else { continue };
             let (sx, sy, ox, oy) = nest.map(bx);
@@ -288,8 +317,11 @@ impl Core {
         let f = (t * fps).round() as i64;
         // ドラッグの見本は「微調整なし」の位置で描く（ずらしは画面側で足す）
         let Some(ov) = self.overlay(f, scale, &[], Some(key), true)? else { return Ok((vec![], None)) };
-        let Some(bb) = ov.rect else { return Ok((vec![], None)) };
-        let img = image::RgbaImage::from_raw(bb[2], bb[3], ov.rgba()).ok_or_else(|| anyhow!("重ねる絵の大きさが合いません"))?;
+        // solo なので層は無いはず。あれば下から順に重ねて 1 枚にする
+        let mut parts = vec![(ov.rect, ov.rgba())];
+        parts.extend(ov.layers.iter().map(|l| (l.rect, l.packed.rgba())));
+        let Some((bb, data)) = flatten_parts(ov.w, ov.h, parts) else { return Ok((vec![], None)) };
+        let img = image::RgbaImage::from_raw(bb[2], bb[3], data).ok_or_else(|| anyhow!("重ねる絵の大きさが合いません"))?;
         let mut out = std::io::Cursor::new(vec![]);
         image::DynamicImage::ImageRgba8(img).write_to(&mut out, image::ImageFormat::Png)?;
         Ok((out.into_inner(), Some(bb)))
@@ -713,9 +745,49 @@ fn fx_frame(ovf: &dyn Fn(f64) -> Result<Option<Arc<CachedOverlay>>>, t: f64, fx_
     }
 }
 
+/// 層（rect と、その中の RGBA）を下から順に重ねて、1 枚（全部の rect を含む最小の矩形とその RGBA）にする。
+/// 1 枚だけなら、そのまま返す（画素に触らない）。全部空なら None。
+fn flatten_parts(w: u32, h: u32, parts: Vec<(Option<[u32; 4]>, Vec<u8>)>) -> Option<([u32; 4], Vec<u8>)> {
+    let mut parts: Vec<([u32; 4], Vec<u8>)> = parts.into_iter().filter_map(|(r, d)| r.map(|r| (r, d))).collect();
+    if parts.len() <= 1 {
+        return parts.pop();
+    }
+    let x0 = parts.iter().map(|(r, _)| r[0]).min()?;
+    let y0 = parts.iter().map(|(r, _)| r[1]).min()?;
+    let x1 = parts.iter().map(|(r, _)| r[0] + r[2]).max()?;
+    let y1 = parts.iter().map(|(r, _)| r[1] + r[3]).max()?;
+    let (bw, bh) = ((x1 - x0) as usize, (y1 - y0) as usize);
+    debug_assert!(x1 <= w && y1 <= h);
+    let mut out = vec![0u8; bw * bh * 4];
+    for (r, data) in parts {
+        for row in 0..r[3] as usize {
+            for col in 0..r[2] as usize {
+                let si = (row * r[2] as usize + col) * 4;
+                let di = ((r[1] - y0) as usize + row) * bw * 4 + ((r[0] - x0) as usize + col) * 4;
+                crate::render::engine::over_pixel(&mut out[di..di + 4], &data[si..si + 4]);
+            }
+        }
+    }
+    Some(([x0, y0, bw as u32, bh as u32], out))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn flatten_parts_stacks_layers_bottom_up() {
+        // 1 枚だけ・全部空
+        assert!(flatten_parts(10, 10, vec![(None, vec![])]).is_none());
+        let one = flatten_parts(10, 10, vec![(Some([1, 1, 1, 1]), vec![9, 8, 7, 255])]).unwrap();
+        assert_eq!(one, ([1, 1, 1, 1], vec![9, 8, 7, 255]));
+        // 下の層（赤、[0,0,2,1]）の上に、次の層（青の不透明、[1,0,2,1]）が重なる
+        let red = vec![255, 0, 0, 255, 255, 0, 0, 255];
+        let blue = vec![0, 0, 255, 255, 0, 0, 255, 255];
+        let (bb, d) = flatten_parts(10, 10, vec![(Some([0, 0, 2, 1]), red), (None, vec![]), (Some([1, 0, 2, 1]), blue)]).unwrap();
+        assert_eq!(bb, [0, 0, 3, 1]);
+        assert_eq!(d, vec![255, 0, 0, 255, 0, 0, 255, 255, 0, 0, 255, 255]);
+    }
 
     #[test]
     fn fx_frame_skips_failed_overlay_only_for_monitor() {

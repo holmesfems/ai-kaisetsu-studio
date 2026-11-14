@@ -161,7 +161,7 @@ ValueError: x
     }
 
     fn put(cache: &OverlayCache, d: &Desc, ov: &Value, f: i64) {
-        let fr = OverlayFrame { w: 1, h: 1, rect: None, rgba: vec![0; 4], ms: 0.0 };
+        let fr = OverlayFrame { w: 1, h: 1, rect: None, rgba: vec![0; 4], layers: vec![], ms: 0.0 };
         cache.put(frame_key(d, ov, f, 0.5, false), Arc::new(CachedOverlay::from_frame(&fr)));
     }
 

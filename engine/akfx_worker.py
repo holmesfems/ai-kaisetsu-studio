@@ -467,6 +467,9 @@ def load(path, overrides_path=None, clips_path=None, placeholder=True):
         names = {getattr(e, "ak_label", None) for e in g.els}
         if len(names) == 1 and isinstance(next(iter(names)), str):
             g.label = next(iter(names))
+        elif g.els and not _LABEL_RE.search(src) and all(_is_rec(e) for e in g.els):
+            # rw = RecWindow(...); add(rw) の形は、関数の名前ではなく RecWindow にする（add(RecWindow(...)) と同じキーに）
+            g.label = "RecWindow"
         if g.els:
             groups.append(g)
         return r
@@ -716,11 +719,31 @@ def bbox_hint(g):
 
 
 # ======================================================================= 描画
-def frame(t, hide=(), solo=None, scale=1.0):
-    fx = _fxmod()
+def _scaled(fr, scale):
+    """コマを倍率 scale に縮める（層ごとに同じ縮め方をする）。"""
+    if scale == 1.0:
+        return fr
     from PIL import Image
+    W, H = fr.size
+    sw, sh = max(1, round(W * scale)), max(1, round(H * scale))
+    if abs(scale - 0.5) < 1e-6:
+        return fr.reduce(2)
+    return fr.resize((sw, sh), Image.BILINEAR)
+
+
+def frame_layers(t, hide=(), solo=None, scale=1.0):
+    """演出のコマを層に分けて返す（base, [(RecWindow のクリップのキー, 層の絵), …]）。
+
+    z の順に描いていく途中で、RecWindow の要素を描く直前（微調整で動かすクリップなら、まとめて描く直前）に新しい層を始める。
+    RecWindow に差し込んだ素材を、その RecWindow の z の位置に挟めるようにするため（Rust が層の間にネストを描く）。
+    同じクリップで分けるのは 1 回だけ。solo のとき（クリップ 1 つの見本）は分けない。RecWindow が無ければ層は無く、base 1 枚。
+    """
+    fx = _fxmod()
     W, H = fx.W, fx.H
-    fr = fx.new(W, H)
+    base = fx.new(W, H)
+    layers = []
+    cur = base
+    split = set()
     hide = set(hide or ())
     ov = L.overrides
     alive = []
@@ -737,6 +760,14 @@ def frame(t, hide=(), solo=None, scale=1.0):
         if e.alive(te):
             alive.append((e, g, o, te))
     alive.sort(key=lambda x: x[0].z)
+
+    def begin_layer(g):
+        nonlocal cur
+        if solo is None and g.key not in split:
+            split.add(g.key)
+            cur = fx.new(W, H)
+            layers.append((g.key, cur))
+
     # 録画を差し込んだ区間の RecWindow は仮表示を描かない（RecWindow.draw は描くときに self.ph を見る）
     touched = []
     for e, g, o, te in alive:
@@ -748,26 +779,32 @@ def frame(t, hide=(), solo=None, scale=1.0):
         for e, g, o, te in alive:
             tf = _transform(o)
             if tf is None:
-                e.draw(fr, te)
+                if _is_rec(e):
+                    begin_layer(g)
+                e.draw(cur, te)
                 continue
             if g.key in done:
                 continue
             done.add(g.key)
+            if any(_is_rec(e2) for e2, g2, _, _ in alive if g2 is g):
+                begin_layer(g)
             lay = fx.new(W, H)
             for e2, g2, _, te2 in alive:
                 if g2 is g:
                     e2.draw(lay, te2)
-            _composite(fr, lay, tf)
+            _composite(cur, lay, tf)
     finally:
         for e in touched:   # 指紋（describe）が描いた後の状態に左右されないよう戻す
             e.ph = e._ak_ph
-    if scale != 1.0:
-        sw, sh = max(1, round(W * scale)), max(1, round(H * scale))
-        if abs(scale - 0.5) < 1e-6:
-            fr = fr.reduce(2)
-        else:
-            fr = fr.resize((sw, sh), Image.BILINEAR)
-    return fr
+    return _scaled(base, scale), [(k, _scaled(im, scale)) for k, im in layers]
+
+
+def frame(t, hide=(), solo=None, scale=1.0):
+    """演出のコマを 1 枚に重ねて返す（層を分けない使い方。still_png など）。"""
+    base, layers = frame_layers(t, hide, solo, scale)
+    for _, im in layers:
+        base.alpha_composite(im)
+    return base
 
 
 def _transform(o):
@@ -803,6 +840,21 @@ def frame_bytes(img):
         return {"w": img.width, "h": img.height, "rect": None}, b""
     crop = img.crop(bb)
     return {"w": img.width, "h": img.height, "rect": [bb[0], bb[1], bb[2] - bb[0], bb[3] - bb[1]]}, crop.tobytes()
+
+
+def frame_layers_bytes(base, layers):
+    """層つきのコマの返事（ヘッダ, 本体）。ヘッダは frame_bytes の w・h・rect（いちばん下の層）に、層があれば
+    layers: [{"key", "rect"}, …] を足す。本体は「いちばん下の層の切り抜き → 各層の切り抜き」を順につなげたもの。"""
+    hdr, data = frame_bytes(base)
+    if not layers:
+        return hdr, data
+    out, heads = [data], []
+    for key, im in layers:
+        h, d = frame_bytes(im)
+        heads.append({"key": key, "rect": h["rect"]})
+        out.append(d)
+    hdr["layers"] = heads
+    return hdr, b"".join(out)
 
 
 def scene_label_render(sid):
@@ -1329,8 +1381,8 @@ def serve():
                     send({"id": rid, "ok": False, "error": "演出がまだ読み込まれていません"})
                     continue
                 t0 = time.time()
-                img = frame(float(req["t"]), req.get("hide"), req.get("solo"), float(req.get("scale", 1.0)))
-                hdr, data = frame_bytes(img)
+                base, layers = frame_layers(float(req["t"]), req.get("hide"), req.get("solo"), float(req.get("scale", 1.0)))
+                hdr, data = frame_layers_bytes(base, layers)
                 hdr.update(id=rid, ok=True, ms=round((time.time() - t0) * 1000, 1))
                 send(hdr, data)
             elif op == "se":
