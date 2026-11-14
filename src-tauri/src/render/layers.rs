@@ -24,7 +24,7 @@ pub fn src_time(c: &MediaClip, t: f64) -> f64 {
 /// 重ねる 1 層。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Layer {
-    /// 攻略動画の戦闘画面と、RecWindow に差し込んだ録画（ネスト）。演出の下
+    /// 攻略動画の戦闘画面と、演出のコマに出てこない RecWindow のネスト。演出の下（出てくるネストは演出の層の間）
     GuideAndNests,
     /// 素材のトラック（番号はトラックの並びの中の位置）
     Media(usize),
@@ -50,6 +50,13 @@ pub fn layer_order(tracks: &[Track]) -> Vec<Layer> {
         }
     }
     out
+}
+
+/// RecWindow に差し込んだ録画（ネスト）を、演出の下（GuideAndNests の位置）に描くか。
+/// 演出のコマの層に出てくる RecWindow のネストは、演出の中のその位置に描くので、ここでは描かない（layer_keys は層のクリップのキー）。
+/// 層に出てこないもの（RecWindow が隠れている・演出なし・演出のコマが失敗）は、今までどおり演出の下。
+pub fn nest_below_fx(key: &str, layer_keys: &[&str]) -> bool {
+    !layer_keys.contains(&key)
 }
 
 /// このクリップが t に出ているか（区間の中で、素材が決まっている）。終わりちょうどは出ない。
@@ -189,6 +196,17 @@ pub fn nest_visible(bx: [f64; 4], map: (f64, f64, f64, f64), nest_w: f64, nest_h
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn nest_below_fx_skips_nests_drawn_inside_fx_layers() {
+        // 層に出てくる RecWindow のネストは演出の中で描く。出てこないものは演出の下
+        let layers = ["RecWindow@c1#1", "RecWindow@c4#1"];
+        assert!(!nest_below_fx("RecWindow@c1#1", &layers));
+        assert!(!nest_below_fx("RecWindow@c4#1", &layers));
+        assert!(nest_below_fx("RecWindow@c9#1", &layers));
+        // 層が無ければ（RecWindow が隠れている・演出なし・失敗）全部、演出の下
+        assert!(nest_below_fx("RecWindow@c1#1", &[]));
+    }
+
     use super::*;
 
     fn clip() -> MediaClip {

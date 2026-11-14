@@ -9,25 +9,62 @@ use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-pub struct CachedOverlay {
-    pub w: u32,
-    pub h: u32,
-    pub rect: Option<[u32; 4]>,
+/// LZ4 で縮めた RGBA 1 枚（rect の中だけ）
+pub struct Packed {
     lz: Vec<u8>,
     raw_len: usize,
 }
 
-impl CachedOverlay {
-    pub fn from_frame(f: &OverlayFrame) -> Self {
-        CachedOverlay { w: f.w, h: f.h, rect: f.rect, lz: lz4_flex::compress(&f.rgba), raw_len: f.rgba.len() }
+impl Packed {
+    fn new(rgba: &[u8]) -> Self {
+        Packed { lz: lz4_flex::compress(rgba), raw_len: rgba.len() }
     }
 
     pub fn rgba(&self) -> Vec<u8> {
         lz4_flex::decompress(&self.lz, self.raw_len).unwrap_or_default()
     }
+}
 
+/// 演出のコマの層 1 枚（RecWindow のクリップのキーつき）
+pub struct CachedLayer {
+    pub key: String,
+    pub rect: Option<[u32; 4]>,
+    pub packed: Packed,
+}
+
+pub struct CachedOverlay {
+    pub w: u32,
+    pub h: u32,
+    pub rect: Option<[u32; 4]>,
+    packed: Packed,
+    /// RecWindow ごとの上の層（下から順。無ければ空）
+    pub layers: Vec<CachedLayer>,
+}
+
+impl CachedOverlay {
+    pub fn from_frame(f: &OverlayFrame) -> Self {
+        CachedOverlay {
+            w: f.w,
+            h: f.h,
+            rect: f.rect,
+            packed: Packed::new(&f.rgba),
+            layers: f.layers.iter().map(|l| CachedLayer { key: l.key.clone(), rect: l.rect, packed: Packed::new(&l.rgba) }).collect(),
+        }
+    }
+
+    /// いちばん下の層の RGBA
+    pub fn rgba(&self) -> Vec<u8> {
+        self.packed.rgba()
+    }
+
+    /// 層に出てくる RecWindow のクリップのキー（下から順）
+    pub fn layer_keys(&self) -> Vec<&str> {
+        self.layers.iter().map(|l| l.key.as_str()).collect()
+    }
+
+    /// 全部の層の合計の大きさの目安
     pub fn bytes(&self) -> usize {
-        self.lz.len() + 64
+        self.packed.lz.len() + self.layers.iter().map(|l| l.packed.lz.len()).sum::<usize>() + 64
     }
 }
 
@@ -207,6 +244,29 @@ mod tests {
             "z": 0.0, "fp": "", "gui": false, "se": [], "bbox": null
         }))
         .unwrap()
+    }
+
+    #[test]
+    fn cached_overlay_keeps_layers() {
+        use crate::render::engine::OverlayLayer;
+        let fr = OverlayFrame {
+            w: 100, h: 50, rect: Some([0, 0, 2, 1]), rgba: vec![1; 8],
+            layers: vec![
+                OverlayLayer { key: "RecWindow@c1#1".into(), rect: Some([10, 20, 3, 1]), rgba: vec![2; 12] },
+                OverlayLayer { key: "RecWindow@c2#1".into(), rect: None, rgba: vec![] },
+            ],
+            ms: 0.0,
+        };
+        let c = CachedOverlay::from_frame(&fr);
+        assert_eq!(c.rgba(), vec![1u8; 8]);
+        assert_eq!(c.layer_keys(), vec!["RecWindow@c1#1", "RecWindow@c2#1"]);
+        assert_eq!(c.layers[0].rect, Some([10, 20, 3, 1]));
+        assert_eq!(c.layers[0].packed.rgba(), vec![2u8; 12]);
+        assert_eq!(c.layers[1].rect, None);
+        // 層のぶんも大きさに入る
+        let plain = CachedOverlay::from_frame(&OverlayFrame { layers: vec![], ..fr.clone() });
+        assert!(c.bytes() > plain.bytes());
+        assert!(plain.layers.is_empty());
     }
 
     #[test]

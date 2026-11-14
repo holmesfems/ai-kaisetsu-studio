@@ -27,7 +27,8 @@ Ctrl+ホイール・タッチパッドのピンチでもズーム）。
 - 手で直した値は `fx/studio_overrides.json` に入り、コードは書き換えない
   （`{"telop@c15#1": {"shift": 0.2, "end": -0.5, "dx": 30, "dy": -10, "scale": 1.1, "opacity": 0.9, "hidden": false}}`）
 - 画面から足した簡単な演出（テロップ・注釈・ハンコ・キーワード）は `fx/studio_clips.json`
-- RecWindow に差し込んだ録画は `studio/project.json` の `nests`（キーは RecWindow のクリップのキー）。合成では演出の下・窓の中だけに描き、
+- RecWindow に差し込んだ録画は `studio/project.json` の `nests`（キーは RecWindow のクリップのキー）。合成では窓の中だけに、その RecWindow の z の位置（RecWindow より z の低い演出の上、RecWindow の枠・ラベルや z の高い演出の下）に描く。
+  RecWindow が隠れているときなど演出のコマに出てこない場合は演出の下。`rw = RecWindow(...); add(rw)` の形でもキーは `RecWindow@c<cue>#<順番>` になる。
   素材が入っている区間は微調整の `no_placeholder: [[開始, 終わり], …]`（自動で書く）で窓の仮表示（ファイル名・説明）を消す
 - 「台本 → 演出の入力」の書き出しは、メモのある行を `files/script_memo.json`（`[{"cue", "sp", "text", "memo"}]`。cue は `script.srt` の番号。メモが無ければ `[]`）にも書く。
   あわせて `files/script_cues.json`（`{"cues": [{n, start, end, text, speaker}]}`。演出の fxkit が読む cue の表。`script.srt` と同じ時刻）も書く

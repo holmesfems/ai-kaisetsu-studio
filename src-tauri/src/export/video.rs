@@ -286,7 +286,7 @@ pub fn export_overlay(core: &Arc<Core>, clean: bool, range: Option<(f64, f64)>) 
             }
         };
         let base = match fr {
-            Some(fr) if fr.rect.is_some() => Some(fr.to_full()),
+            Some(fr) if fr.rect.is_some() || !fr.layers.is_empty() => Some(fr.to_full()),
             _ => None,
         };
         match (label, base) {

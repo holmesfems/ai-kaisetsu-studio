@@ -39,6 +39,9 @@ kit の `RecWindow` は、次の 3 つを上書きして見た目だけを決め
 - `label_image(idx, rid)`: 窓の名札の絵
 - `overlay(fr, t, a)`: 窓の上に重ねるもの
 
+窓に差し込んだ録画は、その RecWindow の z の位置に挟まる（z の低い演出は録画の下、窓の枠・名札と z の高い演出は上）。
+そのため、窓の枠や名札を描く RecWindow の z は、パネルなどの背景より上にする。クリップのキーは、`add(RecWindow(...))` でも `rw = RecWindow(...); add(rw)` でも `RecWindow@c<cue>#<順番>`。
+
 ### 版の確かめ方
 
 アプリが読める版は `SUPPORTED_KIT_API`（今は 1）。合わないときは素の kit で描き、画面に警告を出す。
