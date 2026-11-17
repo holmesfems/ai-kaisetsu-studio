@@ -14,6 +14,7 @@ pub fn kind_label(kind: &str) -> &str {
         "deploy" => "配置",
         "skill" => "スキル",
         "retreat" => "撤退",
+        "skill_stop" => "スキル解除",
         "trust" => "信頼枠",
         other => other,
     }
@@ -408,6 +409,17 @@ mod tests {
         let (n, ch) = apply_patch(&g, None, &pts(), &patch(OpsPatch { update: vec![u], ..Default::default() })).unwrap();
         assert_eq!(n.ops[1].t, 33.0);
         assert_eq!(ch, vec!["op2 の t を変えました".to_string()]);
+    }
+
+    #[test]
+    fn skill_stop_kind_is_accepted_and_labeled() {
+        let g = base();
+        let mut a = add_at(Some(40.0), None, None);
+        a.kind = "skill_stop".into();
+        a.op = "ウァン".into();
+        let (n, ch) = apply_patch(&g, None, &pts(), &patch(OpsPatch { add: vec![a], ..Default::default() })).unwrap();
+        assert_eq!(n.ops.iter().find(|o| o.id == "op3").unwrap().kind, "skill_stop");
+        assert_eq!(ch, vec!["操作 op3（ウァン スキル解除）を足しました".to_string()]);
     }
 
     #[test]

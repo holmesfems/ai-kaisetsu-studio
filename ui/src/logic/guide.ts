@@ -199,6 +199,7 @@ export const OP_KINDS: { kind: string; label: string }[] = [
   { kind: "deploy", label: "配置" },
   { kind: "skill", label: "スキル" },
   { kind: "retreat", label: "撤退" },
+  { kind: "skill_stop", label: "スキル解除" },
   { kind: "trust", label: "信頼枠" },
 ];
 

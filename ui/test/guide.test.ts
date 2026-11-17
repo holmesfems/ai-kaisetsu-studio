@@ -9,7 +9,7 @@ import type { SrcAt } from "../src/gen/SrcAt.ts";
 import {
   nowDelayed, nowLeadFromHere, prevOut, nowLeadInputError, nowLeadText, nowStartLabel,
   addCut, analysisSummary, BENCH_ITEMS, benchFromPercent, benchPercentText, anchorHereError, anchorRows, claudeUndoLabel, claudeUndoTitle, cutFromMarks, cutRows, DEFAULT_CUT_FADE, fixedDiffersFromSettings,
-  anchorEdit, editWithRetry, opEdit, opGoneMessage, fixedRows, fmtGameTime, fmtSeconds, isRevConflict, manualSpan, opAddError, opMarkKind, opMarkTitle, opRows, parseSeconds, partRows, slotRows, slotToggleError,
+  anchorEdit, editWithRetry, OP_KINDS, opEdit, opGoneMessage, fixedRows, fmtGameTime, fmtSeconds, isRevConflict, manualSpan, opAddError, opMarkKind, opMarkTitle, opRows, parseSeconds, partRows, slotRows, slotToggleError,
   withAllUsed, withAnchorT, withCutFade, withFixedOwn, withOp, withoutCut, withoutOp, withSlotNote, withSlotToggled,
 } from "../src/logic/guide.ts";
 
@@ -182,6 +182,10 @@ test("操作の行: 出力の時刻・コスト・ゲーム内の時間・出な
   // 組み立てられていない（ops_out が無い）操作は理由なし・出力の時刻なし
   assert.deepEqual([by("op5").tOut, by("op5").problem, by("op5").kindLabel], [null, null, "（未設定）"]);
   assert.deepEqual(opRows(state({ guide: null })), []);
+  // スキル解除は選べる種類で、和名つき
+  assert.ok(OP_KINDS.some((k) => k.kind === "skill_stop" && k.label === "スキル解除"));
+  const s = opRows(state({ guide: guide({ ops: [op("op1", { kind: "skill_stop" })] }) }));
+  assert.equal(s[0].kindLabel, "スキル解除");
 });
 
 test("操作を直す・消す: 元は変えず、残りの id は振り直さない", () => {

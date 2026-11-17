@@ -274,7 +274,7 @@ pub struct OpAdd {
     /// 素材のコマ番号
     #[serde(default)]
     pub frame: Option<u32>,
-    /// deploy（配置）/ skill（スキル）/ retreat（撤退）/ trust（信頼枠の配置）
+    /// deploy（配置）/ skill（スキル）/ retreat（撤退）/ skill_stop（スキル解除）/ trust（信頼枠の配置）
     pub kind: String,
     /// キャラ名
     #[serde(default)]
