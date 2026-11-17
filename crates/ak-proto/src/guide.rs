@@ -93,7 +93,7 @@ pub struct GuideOp {
     pub id: String,
     /// 素材の時刻（秒）。保存の前にいちばん近いコマの時刻に合わせる
     pub t: f64,
-    /// "deploy"（配置）/ "skill"（スキル）/ "retreat"（撤退）/ "trust"（信頼枠の配置。タイムラインの演出には載せない）
+    /// "deploy"（配置）/ "skill"（スキル）/ "retreat"（撤退）/ "skill_stop"（スキル解除）/ "trust"（信頼枠の配置。タイムラインの演出には載せない）
     pub kind: String,
     /// キャラ名
     pub op: String,
@@ -119,7 +119,7 @@ pub struct GuideOp {
 }
 
 /// 操作の種類（`GuideOp::kind`）
-pub const OP_KINDS: [&str; 4] = ["deploy", "skill", "retreat", "trust"];
+pub const OP_KINDS: [&str; 5] = ["deploy", "skill", "retreat", "skill_stop", "trust"];
 
 /// 編成パートの見せ方
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, JsonSchema, TS)]

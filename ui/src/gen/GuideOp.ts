@@ -13,7 +13,7 @@ id: string,
  */
 t: number, 
 /**
- * "deploy"（配置）/ "skill"（スキル）/ "retreat"（撤退）/ "trust"（信頼枠の配置。タイムラインの演出には載せない）
+ * "deploy"（配置）/ "skill"（スキル）/ "retreat"（撤退）/ "skill_stop"（スキル解除）/ "trust"（信頼枠の配置。タイムラインの演出には載せない）
  */
 kind: string, 
 /**
