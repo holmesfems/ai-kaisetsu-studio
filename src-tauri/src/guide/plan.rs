@@ -97,6 +97,11 @@ impl GuidePlan {
         Some((f.src, ts, self.part_name(f)))
     }
 
+    /// 手動パートがあるか（編成と自動指揮だけの回は無い）
+    pub fn has_manual(&self) -> bool {
+        self.parts.iter().any(|p| p.name == "manual")
+    }
+
     /// 素材の時刻 t_src が手動パートの出力のどの時刻に来るか。カットの中・手動の区間の外は None
     pub fn manual_out_of(&self, t_src: f64) -> Option<f64> {
         self.manual.try_out_of(t_src).map(|u| self.manual_t0 + u)
@@ -223,7 +228,7 @@ struct Seg {
     out0: f64,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 struct ManualMap {
     segs: Vec<Seg>,
     /// segs[i] と segs[i+1] の継ぎ目のフェード（秒）
@@ -329,26 +334,44 @@ pub fn plan(guide: &Guide, fixed: &GuideFixed, pts: &[f64]) -> Result<GuidePlan,
         return Err("解析の結果のコマの時刻が増えていきません。もう一度解析してください".into());
     }
     check_fixed(fixed)?;
-    let mut a = [0.0; 5];
-    for (i, name) in ANCHOR_NAMES.iter().enumerate() {
+    // 手動パートは無くてもよい（編成と自動指揮だけの回）。手動のアンカーが 2 つとも空なら手動パート無し
+    let has_manual = ["manual_cost0", "manual_end"].map(|n| guide.anchors.get(n).and_then(|a| a.value()).is_some());
+    let with_manual = match has_manual {
+        [true, true] => true,
+        [false, false] => false,
+        _ => {
+            return Err("手動のアンカー（手動の最初のコスト・手動の作戦終了）は、2 つともそろえるか、手動パートが無い回なら 2 つとも空にしてください".into())
+        }
+    };
+    let names: Vec<&str> = ANCHOR_NAMES.iter().copied().filter(|n| with_manual || !n.starts_with("manual_")).collect();
+    let mut a = Vec::with_capacity(names.len());
+    for name in &names {
         // アンカーは「そのコマ」を指す。丸めた秒（解析は 3 桁・手入力も）だとコマの時刻の少し前になり、
         // 1 つ前のコマが出てしまうので、いちばん近いコマの時刻に合わせる
-        a[i] = snap_to_frame(pts, anchor(guide, name)?);
+        a.push(snap_to_frame(pts, anchor(guide, name)?));
     }
-    for i in 1..5 {
+    for i in 1..a.len() {
         if a[i] <= a[i - 1] {
             return Err(format!(
                 "アンカーの順番が合いません: 「{}」（{:.3} 秒）は「{}」（{:.3} 秒）より後でなければなりません",
-                ANCHOR_NAMES[i], a[i], ANCHOR_NAMES[i - 1], a[i - 1]
+                names[i], a[i], names[i - 1], a[i - 1]
             ));
         }
     }
-    let [dark, m_cost0, m_end, a_cost0, a_end] = a;
+    let src_of = |name: &str| names.iter().position(|n| *n == name).map(|i| a[i]);
+    let (dark, a_cost0, a_end) = (a[0], a[a.len() - 2], a[a.len() - 1]);
     let n = |sec: f64| (sec * FPS).round() as usize;
 
-    // 手動パートの素材の区間とカット
-    let (m0, m1) = (m_cost0 - fixed.manual_lead, m_end + fixed.manual_tail);
-    let mmap = manual_map(m0, m1, &guide.cuts)?;
+    // 手動パートの素材の区間とカット（手動パートが無ければ None。カットは手動パートの中にしか置けない）
+    let mmap = if with_manual {
+        let (m_cost0, m_end) = (src_of("manual_cost0").unwrap(), src_of("manual_end").unwrap());
+        Some(manual_map(m_cost0 - fixed.manual_lead, m_end + fixed.manual_tail, &guide.cuts)?)
+    } else {
+        if !guide.cuts.is_empty() {
+            return Err("カットは手動パートの中にだけ置けます。この回には手動パートが無いので、カットを外してください".into());
+        }
+        None
+    };
     // 自動パートの素材の区間
     let (a0, a1) = (a_cost0 - fixed.auto_lead, a_end + fixed.auto_tail);
     if a1 <= a0 {
@@ -357,26 +380,34 @@ pub fn plan(guide: &Guide, fixed: &GuideFixed, pts: &[f64]) -> Result<GuidePlan,
     // 編成パートの素材は「暗転 + tail」が formation_end に来る位置から（素材の 0 秒より前は先頭のコマで止まる）
     let f0 = dark + fixed.formation_tail - fixed.formation_end;
 
-    let counts = [n(fixed.formation_end), n(mmap.len), n(a1 - a0), n(fixed.result_len)];
+    // (PART_NAMES の添字, コマ数)。手動パートが無ければ並びから外す
+    let mut counts = vec![(0usize, n(fixed.formation_end))];
+    if let Some(m) = &mmap {
+        counts.push((1, n(m.len)));
+    }
+    counts.push((2, n(a1 - a0)));
+    counts.push((3, n(fixed.result_len)));
     let mut parts = vec![];
-    let mut frames: Vec<PlanFrame> = Vec::with_capacity(counts.iter().sum());
+    let mut frames: Vec<PlanFrame> = Vec::with_capacity(counts.iter().map(|c| c.1).sum());
     let mut start = 0usize;
-    for (pi, &cnt) in counts.iter().enumerate() {
+    let mut part_t0 = [0.0f64; 4];
+    for &(pi, cnt) in &counts {
+        part_t0[pi] = start as f64 / FPS;
         parts.push(PlanPart { name: PART_NAMES[pi].into(), t0: start as f64 / FPS, t1: (start + cnt) as f64 / FPS });
         for j in 0..cnt {
             let u = j as f64 / FPS;
             let part = pi as u8;
-            let fr = match pi {
-                0 => PlanFrame { part, src: frame_at_time(pts, f0 + u), mix: None },
-                1 => {
-                    let (ta, mix) = mmap.at(u);
+            let fr = match (pi, &mmap) {
+                (0, _) => PlanFrame { part, src: frame_at_time(pts, f0 + u), mix: None },
+                (1, Some(m)) => {
+                    let (ta, mix) = m.at(u);
                     PlanFrame {
                         part,
                         src: frame_at_time(pts, ta),
                         mix: mix.map(|(tb, w)| (frame_at_time(pts, tb), w as f32)),
                     }
                 }
-                2 => PlanFrame { part, src: frame_at_time(pts, a0 + u), mix: None },
+                (2, _) => PlanFrame { part, src: frame_at_time(pts, a0 + u), mix: None },
                 // リザルト: 自動パートの素材の続きをそのまま流す
                 _ => PlanFrame { part, src: frame_at_time(pts, a1 + u), mix: None },
             };
@@ -384,16 +415,18 @@ pub fn plan(guide: &Guide, fixed: &GuideFixed, pts: &[f64]) -> Result<GuidePlan,
         }
         start += cnt;
     }
-    let part_t0 = |i: usize| parts[i].t0;
-    let anchor_out = vec![
-        (ANCHOR_NAMES[0].to_string(), fixed.formation_end - fixed.formation_tail),
-        (ANCHOR_NAMES[1].to_string(), part_t0(1) + mmap.out_of(m_cost0)),
-        (ANCHOR_NAMES[2].to_string(), part_t0(1) + mmap.out_of(m_end)),
-        (ANCHOR_NAMES[3].to_string(), part_t0(2) + (a_cost0 - a0)),
-        (ANCHOR_NAMES[4].to_string(), part_t0(2) + (a_end - a0)),
-    ];
-    let anchor_src = ANCHOR_NAMES.iter().zip(a).map(|(k, v)| (k.to_string(), v)).collect();
-    let manual_t0 = part_t0(1);
+    let mut anchor_out = vec![(ANCHOR_NAMES[0].to_string(), fixed.formation_end - fixed.formation_tail)];
+    if let Some(m) = &mmap {
+        for name in ["manual_cost0", "manual_end"] {
+            anchor_out.push((name.to_string(), part_t0[1] + m.out_of(src_of(name).unwrap())));
+        }
+    }
+    anchor_out.push(("auto_cost0".to_string(), part_t0[2] + (a_cost0 - a0)));
+    anchor_out.push(("auto_end".to_string(), part_t0[2] + (a_end - a0)));
+    let anchor_src = names.iter().zip(&a).map(|(k, v)| (k.to_string(), *v)).collect();
+    // 手動パートが無ければ、その位置（自動パートの頭）。NOW の開始の下限にしか使わない
+    let manual_t0 = if mmap.is_some() { part_t0[1] } else { part_t0[2] };
+    let mmap = mmap.unwrap_or_default();
     // カットの継ぎ目: B の断片の頭から、フェードの長さのあいだ
     let seams = (1..mmap.segs.len())
         .map(|k| {
@@ -403,19 +436,21 @@ pub fn plan(guide: &Guide, fixed: &GuideFixed, pts: &[f64]) -> Result<GuidePlan,
         .collect();
     // 素材の音: 映像と同じ「出力 → 素材」の対応で並べる（素材の音は連続なので、映像のようにコマには丸めない）
     let mut audio = vec![AudioSeg { out0: parts[0].t0, out1: parts[0].t1, src0: f0, fade_in: 0.0, fade_out: 0.0 }];
+    let manual_t1 = parts.iter().find(|p| p.name == "manual").map(|p| p.t1).unwrap_or(manual_t0);
     for (k, sg) in mmap.segs.iter().enumerate() {
         let out0 = manual_t0 + sg.out0;
         audio.push(AudioSeg {
             out0,
             // 手動パートの終わり（コマに丸めた値）より先へは出さない
-            out1: (out0 + (sg.b - sg.a)).min(parts[1].t1),
+            out1: (out0 + (sg.b - sg.a)).min(manual_t1),
             src0: sg.a,
             fade_in: if k > 0 { mmap.fades[k - 1] } else { 0.0 },
             fade_out: mmap.fades.get(k).copied().unwrap_or(0.0),
         });
     }
     // 自動とリザルトは素材の続き（映像の a1 + u と同じ）
-    audio.push(AudioSeg { out0: parts[2].t0, out1: parts[3].t1, src0: a0, fade_in: 0.0, fade_out: 0.0 });
+    let last = parts.last().expect("パートは 3 つ以上ある").t1;
+    audio.push(AudioSeg { out0: part_t0[2], out1: last, src0: a0, fade_in: 0.0, fade_out: 0.0 });
     Ok(GuidePlan {
         fps: FPS,
         parts,
@@ -431,6 +466,9 @@ pub fn plan(guide: &Guide, fixed: &GuideFixed, pts: &[f64]) -> Result<GuidePlan,
     })
 }
 
+/// 手動パートが無い回で操作を足そうとしたときの文
+pub const NO_MANUAL_OPS: &str = "この回には手動パートが無いので、操作は置けません（操作は手動パートの中にだけ置けます）";
+
 /// 次の操作の id（"op" + 今ある番号の最大 + 1。消しても詰めない）
 pub fn next_op_id(ops: &[GuideOp]) -> String {
     let max = ops.iter().filter_map(|o| o.id.strip_prefix("op").and_then(|n| n.parse::<u32>().ok())).max().unwrap_or(0);
@@ -440,6 +478,9 @@ pub fn next_op_id(ops: &[GuideOp]) -> String {
 /// 出力の時刻 t_out（手動パートの中）に操作を足す。kind は "deploy"。足した操作の id を返す。
 /// 手動パートの外・範囲外は Err（和文）。ops は素材の時刻の順に保つ
 pub fn add_op(g: &mut Guide, plan: &GuidePlan, t_out: f64) -> Result<String, String> {
+    if !plan.has_manual() {
+        return Err(NO_MANUAL_OPS.into());
+    }
     let Some((_, t_src, part)) = plan.src_at(t_out) else {
         return Err("今の位置は動画の外です。手動パートの中に再生位置を置いてください".into());
     };
@@ -844,6 +885,65 @@ mod tests {
         assert!(with(vec![c(40.0, 52.0, 1.0), c(52.5, 60.0, 1.0)]).unwrap_err().contains("短すぎ"));
         // 重ならなければ順番が逆に書かれていてもよい
         assert!(with(vec![c(60.0, 62.0, 0.2), c(40.0, 52.0, 0.2)]).is_ok());
+    }
+
+    /// 編成と自動指揮だけの回（手動のアンカーが 2 つとも空）
+    fn g_no_manual() -> Guide {
+        let mut g = g175();
+        g.anchors.remove("manual_cost0");
+        g.anchors.insert("manual_end".into(), Anchor::default());
+        g
+    }
+
+    #[test]
+    fn no_manual_part_builds_formation_auto_result() {
+        let f = GuideFixed::default();
+        let pts = pts_const(20000, 60.0);
+        let p = plan(&g_no_manual(), &f, &pts).unwrap();
+        let names: Vec<&str> = p.parts.iter().map(|x| x.name.as_str()).collect();
+        assert_eq!(names, ["formation", "auto", "result"]);
+        assert!(!p.has_manual());
+        // 編成の直後に自動が来る
+        assert_eq!(part(&p, "auto").t0, part(&p, "formation").t1);
+        let len = part(&p, "auto").t1 - part(&p, "auto").t0;
+        assert!((len - (302.445 - 200.393)).abs() < 1.0 / 60.0);
+        assert_eq!(p.frames.len(), (p.parts[2].t1 * 60.0).round() as usize);
+        // 自動の頭のコマは auto_cost0 − auto_lead の素材、パートの番号は PART_NAMES の自動
+        let k = (part(&p, "auto").t0 * 60.0).round() as usize;
+        assert_eq!(p.part_name(&p.frames[k]), "auto");
+        assert_eq!(p.frames[k].src, frame_at_time(&pts, p.anchor_src_of("auto_cost0").unwrap() - f.auto_lead));
+        // 手動のアンカーは出力にも素材にも出さない
+        assert!(p.anchor_out.iter().all(|(k, _)| !k.starts_with("manual_")));
+        assert!(p.anchor_src_of("manual_cost0").is_none());
+        assert!((p.anchor_src_of("auto_cost0").unwrap() - 202.393).abs() < 1.0 / 60.0);
+        // 素材の音は編成と自動＋リザルトの 2 区間
+        let au = p.audio_segments();
+        assert_eq!(au.len(), 2);
+        assert_eq!(au[1].out0, part(&p, "auto").t0);
+        assert_eq!(au[1].out1, part(&p, "result").t1);
+        // 操作は置けない
+        assert!(p.manual_out_of(202.393).is_none());
+        let mut g = g_no_manual();
+        assert_eq!(add_op(&mut g, &p, part(&p, "auto").t0 + 1.0).unwrap_err(), NO_MANUAL_OPS);
+    }
+
+    #[test]
+    fn no_manual_part_rejects_half_manual_anchors_and_cuts() {
+        let f = GuideFixed::default();
+        let pts = pts_const(20000, 60.0);
+        // 手動のアンカーが片方だけ
+        let mut g = g175();
+        g.anchors.remove("manual_end");
+        assert!(plan(&g, &f, &pts).unwrap_err().contains("2 つとも"));
+        // カットは手動パートの中にしか置けない
+        let mut g = g_no_manual();
+        g.cuts.push(Cut { src_in: 210.0, src_out: 220.0, fade: 0.0 });
+        assert!(plan(&g, &f, &pts).unwrap_err().contains("カット"));
+        // 順番は暗転 → 自動で見る
+        let mut g = g_no_manual();
+        g.anchors.insert("formation_dark".into(), Anchor { t: Some(250.0), auto: None });
+        let e = plan(&g, &f, &pts).unwrap_err();
+        assert!(e.contains("順番") && e.contains("auto_cost0") && e.contains("formation_dark"), "{e}");
     }
 
     #[test]

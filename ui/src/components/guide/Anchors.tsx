@@ -49,6 +49,11 @@ export default function GuideAnchors({ g }: { g: GuideState }) {
           ))}
         </tbody>
       </table>
+      {!g.plan_parts.some((p) => p.name === "manual") && g.plan_parts.length > 0 && (
+        <div className="dim2" style={{ fontSize: 11, marginTop: 4 }}>
+          手動のアンカーが 2 つとも空なので、手動パートの無い回（編成 → 自動 → リザルト）として組み立てています
+        </div>
+      )}
     </>
   );
 }
