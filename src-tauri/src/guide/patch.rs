@@ -30,6 +30,9 @@ fn check_kind(kind: &str) -> Result<(), String> {
 
 /// 出力の時刻 t_out（手動パートの中）が見せている素材の時刻。手動パートの外・範囲外は Err（和文。`add_op` と同じ判断）
 pub fn manual_src_of(plan: &GuidePlan, t_out: f64) -> Result<f64, String> {
+    if !plan.has_manual() {
+        return Err(super::plan::NO_MANUAL_OPS.into());
+    }
     let Some((_, t_src, part)) = plan.src_at(t_out) else {
         return Err("出力の時刻が動画の外です。手動パートの中の時刻にしてください".into());
     };
@@ -84,6 +87,9 @@ pub fn resolve_time(t: Option<f64>, t_out: Option<f64>, frame: Option<u32>, pts:
         return Err(format!("素材の {t:.3} 秒はカットの中です（出力に出ません）"));
     }
     if let Some(plan) = plan {
+        if !plan.has_manual() {
+            return Err(super::plan::NO_MANUAL_OPS.into());
+        }
         if plan.manual_out_of(t).is_none() {
             return Err(match plan.part_of_src(t) {
                 Some(part) => format!("操作は手動パートの中に置いてください（素材の {t:.3} 秒は「{}」パートです）", part_label(part)),

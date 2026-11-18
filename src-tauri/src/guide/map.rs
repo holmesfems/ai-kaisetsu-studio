@@ -324,6 +324,26 @@ mod tests {
     }
 
     #[test]
+    fn map_without_manual_part_has_no_manual_items() {
+        let mut g = guide();
+        g.ops.clear();
+        g.subs.clear();
+        g.cuts.clear();
+        g.anchors.remove("manual_cost0");
+        g.anchors.remove("manual_end");
+        let (p, a) = built(&g);
+        let m = map_json(&p, &g, Some(&a), &|_| None);
+        let names: Vec<&str> = m["parts"].as_array().unwrap().iter().map(|x| x["name"].as_str().unwrap()).collect();
+        assert_eq!(names, ["formation", "auto", "result"]);
+        assert_eq!(m["src"].as_array().unwrap().len(), p.frames.len());
+        assert_eq!(m["anchors_out"].as_object().unwrap().len(), 3);
+        assert!(m["seams"].as_array().unwrap().is_empty());
+        // 自動のタイマー・クリア時間は手動が無くても読める
+        assert_eq!(timer_values(&p, Some(&a)).len(), p.frames.len());
+        assert!(guide_warnings(&g, Some(&p), &[]).is_empty(), "{:?}", guide_warnings(&g, Some(&p), &[]));
+    }
+
+    #[test]
     fn map_has_game_ops_anchors_seams_and_formation() {
         let mut g = guide();
         g.cuts.push(Cut { src_in: 40.0, src_out: 52.0, fade: 0.5 });
