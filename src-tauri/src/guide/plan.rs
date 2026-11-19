@@ -335,8 +335,7 @@ pub fn plan(guide: &Guide, fixed: &GuideFixed, pts: &[f64]) -> Result<GuidePlan,
     }
     check_fixed(fixed)?;
     // 手動パートは無くてもよい（編成と自動指揮だけの回）。手動のアンカーが 2 つとも空なら手動パート無し
-    let has_manual = ["manual_cost0", "manual_end"].map(|n| guide.anchors.get(n).and_then(|a| a.value()).is_some());
-    let with_manual = match has_manual {
+    let with_manual = match manual_anchors_set(guide) {
         [true, true] => true,
         [false, false] => false,
         _ => {
@@ -464,6 +463,30 @@ pub fn plan(guide: &Guide, fixed: &GuideFixed, pts: &[f64]) -> Result<GuidePlan,
         now_lead: fixed.now_lead,
         audio,
     })
+}
+
+const MANUAL_ANCHORS: [&str; 2] = ["manual_cost0", "manual_end"];
+
+/// 手動のアンカー（manual_cost0・manual_end）に使う値が入っているか
+fn manual_anchors_set(guide: &Guide) -> [bool; 2] {
+    MANUAL_ANCHORS.map(|n| guide.anchors.get(n).and_then(|a| a.value()).is_some())
+}
+
+/// 保存の前の確かめ（「今は組み立てられるのに、この変更で組み立てられなくなるなら保存しない」）に使う guide。
+/// 手動のアンカーが片方だけのときは、手動のアンカーを 2 つとも外したものを返す。
+/// 画面のアンカーの表は 1 つずつしか保存できないので、手動パートを足す・外すときは必ず片方だけの間を通る。
+/// その間は保存を通し（組み立ては「2 つともそろえるか…」のエラーになる）、ほかの部分が壊れていないかだけを見る
+pub fn guide_for_save_check(guide: &Guide) -> std::borrow::Cow<'_, Guide> {
+    match manual_anchors_set(guide) {
+        [true, false] | [false, true] => {
+            let mut g = guide.clone();
+            for n in MANUAL_ANCHORS {
+                g.anchors.remove(n);
+            }
+            std::borrow::Cow::Owned(g)
+        }
+        _ => std::borrow::Cow::Borrowed(guide),
+    }
 }
 
 /// 手動パートが無い回で操作を足そうとしたときの文
@@ -944,6 +967,29 @@ mod tests {
         g.anchors.insert("formation_dark".into(), Anchor { t: Some(250.0), auto: None });
         let e = plan(&g, &f, &pts).unwrap_err();
         assert!(e.contains("順番") && e.contains("auto_cost0") && e.contains("formation_dark"), "{e}");
+    }
+
+    #[test]
+    fn save_check_passes_half_manual_anchors_but_checks_the_rest() {
+        let f = GuideFixed::default();
+        let pts = pts_const(20000, 60.0);
+        // 3 パートの回に手動のアンカーを 1 つ入れた（画面では 1 つずつしか入れられない）: 確かめは通る
+        let mut g = g_no_manual();
+        g.anchors.insert("manual_cost0".into(), Anchor { t: Some(110.0), auto: None });
+        assert!(plan(&g, &f, &pts).unwrap_err().contains("2 つとも"));
+        assert!(plan(&guide_for_save_check(&g), &f, &pts).is_ok());
+        // 4 パートの回から手動のアンカーを 1 つ外した: 同じく通る
+        let mut g = g175();
+        g.anchors.remove("manual_end");
+        assert!(plan(&guide_for_save_check(&g), &f, &pts).is_ok());
+        // 片方だけの間でも、ほかが壊れる変更（手動の外に残るカット）は断る
+        g.cuts.push(Cut { src_in: 120.0, src_out: 125.0, fade: 0.0 });
+        assert!(plan(&guide_for_save_check(&g), &f, &pts).unwrap_err().contains("カット"));
+        // 2 つともそろっている・2 つとも空なら、そのまま
+        let g = g175();
+        assert!(matches!(guide_for_save_check(&g), std::borrow::Cow::Borrowed(_)));
+        let g = g_no_manual();
+        assert!(matches!(guide_for_save_check(&g), std::borrow::Cow::Borrowed(_)));
     }
 
     #[test]
