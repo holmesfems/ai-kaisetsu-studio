@@ -35,11 +35,17 @@ impl SubSlot {
 /// guide.subs から、出せる小窓の区間と、出せないものの理由（警告。和文）を作る。
 /// 操作の出力の時刻（`ops_out`）に offset を足して出し始めとし、長さは `src_out − src_in`。手動パートの外へはみ出す分は切る。
 /// 区間が全部手動パートの外・`at_op` が無い・操作がカットの中・`src_out <= src_in`・素材なしは警告にして、その sub だけ出さない。
-/// 手動パートが組み立てに無ければ、何も出さず警告も出さない（組み立てのエラーのほうが先に出る）
+/// 手動パートが無い回（編成と自動指揮だけ）では何も出さず、補足素材があれば 1 つの警告にまとめる
 pub fn sub_slots(guide: &Guide, plan: &GuidePlan, outs: &[OpOut]) -> (Vec<SubSlot>, Vec<String>) {
     let mut slots = vec![];
     let mut warns = vec![];
     let Some(man) = plan.parts.iter().find(|p| p.name == "manual") else {
+        if !guide.subs.is_empty() {
+            warns.push(format!(
+                "補足素材の小窓（{} 件）は出しません。この回には手動パートが無いので、補足素材は出せません（手動パートの中にだけ出せます）",
+                guide.subs.len()
+            ));
+        }
         return (slots, warns);
     };
     for (i, s) in guide.subs.iter().enumerate() {
@@ -341,6 +347,13 @@ mod tests {
         // 自動のタイマー・クリア時間は手動が無くても読める
         assert_eq!(timer_values(&p, Some(&a)).len(), p.frames.len());
         assert!(guide_warnings(&g, Some(&p), &[]).is_empty(), "{:?}", guide_warnings(&g, Some(&p), &[]));
+        // 補足素材が残っていれば、出さないことを警告で知らせる（黙って消さない）
+        g.subs = vec![GuideSub { at_op: "op1".into(), src: "S.MP4".into(), src_out: 3.0, ..Default::default() }];
+        let (slots, w) = sub_slots(&g, &p, &[]);
+        assert!(slots.is_empty());
+        assert_eq!(w.len(), 1);
+        assert!(w[0].contains("手動パートが無い"), "{w:?}");
+        assert_eq!(guide_warnings(&g, Some(&p), &[]), w);
     }
 
     #[test]

@@ -180,7 +180,8 @@ pub fn any_group_at(groups: &[crate::render::engine::Group], ov: &Value, t: f64)
     })
 }
 
-/// コマの鍵。そのコマに出ているクリップの指紋と微調整だけから作る。
+/// コマの鍵。そのコマに出ているクリップのキー・指紋・微調整だけから作る。
+/// キーも入れるのは、コマが RecWindow の層をクリップのキーで持つから（キーが付け替わると、ネストを挟む位置が変わる）
 pub fn frame_key(desc: &Desc, ov: &Value, f: i64, scale: f64, placeholder: bool) -> u64 {
     let t = f as f64 / desc.fps;
     let mut h = DefaultHasher::new();
@@ -193,6 +194,7 @@ pub fn frame_key(desc: &Desc, ov: &Value, f: i64, scale: f64, placeholder: bool)
         if hidden || t < a || t >= b {
             continue;
         }
+        g.key.hash(&mut h);
         g.fp.hash(&mut h);
         if let Some(o) = ov.get(&g.key) {
             o.to_string().hash(&mut h);
@@ -288,5 +290,24 @@ mod tests {
         // 別の群が出ていればよい
         let two = vec![group("a", 1.0, 2.0), group("b", 3.0, 4.0)];
         assert!(any_group_at(&two, &json!({"a": {"hidden": true}}), 3.5));
+    }
+
+    #[test]
+    fn frame_key_changes_when_clip_key_changes() {
+        // 中身（指紋）も微調整も同じまま、台本の cue のずれなどでキーだけ付け替わったとき、
+        // 前のキーの RecWindow の層を持ったコマを使い回さない（ネストを挟む位置がずれる）
+        let desc = |key: &str| -> Desc {
+            serde_json::from_value(json!({
+                "path": "fx/a_fx.py", "end": 10.0, "fps": 60.0, "w": 1920, "h": 1080,
+                "groups": [group(key, 5.0, 9.0)], "cues": [], "sync": [], "sync_used": [],
+                "meta": {}, "build_sec": 0.0, "stage": [], "rec_box": []
+            }))
+            .unwrap()
+        };
+        let ov = json!({});
+        let k = |key: &str| frame_key(&desc(key), &ov, 360, 1.0, true);
+        assert_eq!(k("RecWindow@c6#1"), k("RecWindow@c6#1"));
+        assert_ne!(k("RecWindow@c6#1"), k("RecWindow@c7#1"));
+        assert_ne!(k("RecWindow@c6#1"), k("RecWindow@c6#2"));
     }
 }

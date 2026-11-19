@@ -259,7 +259,9 @@ impl Core {
             (rt.plan.is_some(), rt.guide.as_ref().map(|x| x.src.clone()).unwrap_or_default())
         };
         if had_plan && g.src == old_src {
-            if let Err(e) = build_plan(Some(&g), analysis.as_deref(), &self.settings.get().guide_fixed) {
+            // 手動のアンカーが片方だけの間（手動パートを足す・外す途中）は通す。ほかの部分は確かめる
+            let check = crate::guide::plan::guide_for_save_check(&g);
+            if let Err(e) = build_plan(Some(&check), analysis.as_deref(), &self.settings.get().guide_fixed) {
                 bail!("{e}（この変更は保存していません）");
             }
         }
