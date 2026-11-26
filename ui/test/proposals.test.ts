@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ProposalItem } from "../src/gen/ProposalItem.ts";
-import { NO_BLOCK, proposalFocusLine, proposalHead } from "../src/logic/proposals.ts";
+import { NO_BLOCK, chatScrollToEnd, proposalFocusLine, proposalHead } from "../src/logic/proposals.ts";
 
 const item = (o: Partial<ProposalItem>): ProposalItem => ({
   kind: "edit", line_id: null, after_id: null, block_id: null, old_text: "", new_text: "", sp: "", reason: "", status: "pending",
@@ -63,4 +63,14 @@ test("見出しを押したときに飛ぶ行", () => {
   assert.equal(proposalFocusLine(item({ kind: "notes", block_id: "b1" }), first), "a");
   assert.equal(proposalFocusLine(item({ kind: "block_delete", block_id: "b2" }), first), null);
   assert.equal(proposalFocusLine(item({ kind: "block_add", block_id: "nb", after_block: "b1" }), first), "a");
+});
+
+test("チャット欄を下へ送るのは、新しいメッセージか推敲案が届いたときだけ（#25）", () => {
+  const seen = new Set([1, 2]);
+  assert.equal(chatScrollToEnd(0, 0, null, []), true, "最初の表示");
+  assert.equal(chatScrollToEnd(3, 4, seen, [1, 2]), true, "メッセージが増えた");
+  assert.equal(chatScrollToEnd(3, 3, seen, [1, 2, 3]), true, "推敲案が増えた");
+  assert.equal(chatScrollToEnd(3, 3, seen, [1, 2]), false, "採用・不採用で中身が変わっただけ");
+  assert.equal(chatScrollToEnd(3, 3, seen, [2]), false, "推敲案が消えた");
+  assert.equal(chatScrollToEnd(4, 3, seen, [1, 2]), false, "メッセージが減った");
 });

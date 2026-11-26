@@ -9,7 +9,7 @@ import { charDiff, tc } from "../logic/util";
 import { IMG_EXTS, imagePaths, mimeExt, IMG_ONLY_TEXT } from "../logic/chatimg";
 import { ClaudeConnect } from "./ClaudeConnect.tsx";
 import { DELIVERY, PROPOSAL_STATUS } from "../logic/terms.ts";
-import { NO_BLOCK, proposalFocusLine, proposalHead } from "../logic/proposals.ts";
+import { NO_BLOCK, chatScrollToEnd, proposalFocusLine, proposalHead } from "../logic/proposals.ts";
 import { fmtElapsed, statusView, verbAt } from "../logic/claudestatus";
 import { MARK_ONLY_TEXT, bodyWithMarks, bytesToBase64, circled, circledList, clipsUnder, dropMarkImages, drawMarks, groupByT, sendableMarks } from "../logic/marks";
 import type { MarkFound } from "../gen/MarkFound";
@@ -334,9 +334,17 @@ export default function ClaudePanel() {
   const [withCtx, setWithCtx] = useState(true);
   const [showOld, setShowOld] = useState(false);
   const box = useRef<HTMLDivElement>(null);
+  // 前に見た回・メッセージの数・推敲案の id。採用・不採用では下へ送らない（#25）。回を替えたら最初の表示として扱う
+  const root = useS((s) => s.project?.root ?? null);
+  const seen = useRef<{ root: string | null; chat: number; ids: ReadonlySet<number> } | null>(null);
   useEffect(() => {
-    box.current?.scrollTo({ top: box.current.scrollHeight });
-  }, [chat.length, proposals]);
+    const ids = proposals.map((p) => p.id);
+    const prev = seen.current?.root === root ? seen.current : null;
+    if (chatScrollToEnd(prev?.chat ?? 0, chat.length, prev?.ids ?? null, ids)) {
+      box.current?.scrollTo({ top: box.current.scrollHeight });
+    }
+    seen.current = { root, chat: chat.length, ids: new Set(ids) };
+  }, [root, chat.length, proposals]);
   const pendingProps = proposals.filter((p) => p.items.some((i) => i.status === "pending"));
   const oldProps = proposals.filter((p) => !p.items.some((i) => i.status === "pending"));
   const input = useRef<HTMLTextAreaElement>(null);
