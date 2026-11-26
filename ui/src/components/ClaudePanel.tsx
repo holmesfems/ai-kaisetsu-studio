@@ -9,7 +9,7 @@ import { charDiff, tc } from "../logic/util";
 import { IMG_EXTS, imagePaths, mimeExt, IMG_ONLY_TEXT } from "../logic/chatimg";
 import { ClaudeConnect } from "./ClaudeConnect.tsx";
 import { DELIVERY, PROPOSAL_STATUS } from "../logic/terms.ts";
-import { NO_BLOCK, proposalFocusLine, proposalHead } from "../logic/proposals.ts";
+import { NO_BLOCK, chatScrollToEnd, proposalFocusLine, proposalHead } from "../logic/proposals.ts";
 import { fmtElapsed, statusView, verbAt } from "../logic/claudestatus";
 import { MARK_ONLY_TEXT, bodyWithMarks, bytesToBase64, circled, circledList, clipsUnder, dropMarkImages, drawMarks, groupByT, sendableMarks } from "../logic/marks";
 import type { MarkFound } from "../gen/MarkFound";
@@ -334,8 +334,15 @@ export default function ClaudePanel() {
   const [withCtx, setWithCtx] = useState(true);
   const [showOld, setShowOld] = useState(false);
   const box = useRef<HTMLDivElement>(null);
+  // 前に見たメッセージの数と推敲案の id。採用・不採用では下へ送らない（#25）
+  const seen = useRef<{ chat: number; ids: ReadonlySet<number> } | null>(null);
   useEffect(() => {
-    box.current?.scrollTo({ top: box.current.scrollHeight });
+    const ids = proposals.map((p) => p.id);
+    const prev = seen.current;
+    if (chatScrollToEnd(prev?.chat ?? 0, chat.length, prev?.ids ?? null, ids)) {
+      box.current?.scrollTo({ top: box.current.scrollHeight });
+    }
+    seen.current = { chat: chat.length, ids: new Set(ids) };
   }, [chat.length, proposals]);
   const pendingProps = proposals.filter((p) => p.items.some((i) => i.status === "pending"));
   const oldProps = proposals.filter((p) => !p.items.some((i) => i.status === "pending"));

@@ -80,3 +80,17 @@ export function proposalFocusLine(it: ProposalItem, firstLineOf: (blockId: strin
       return it.line_id ?? it.after_id ?? firstLineOf(it.block_id);
   }
 }
+
+/**
+ * チャット欄をいちばん下へ送るか（issue #25）。
+ * 新しいメッセージか新しい推敲案が届いたときだけ送る。案の採用・不採用（中身の状態が変わるだけ）では送らない。
+ * prev は前に見た推敲案の id、null は最初の表示。
+ */
+export function chatScrollToEnd(
+  prevChat: number, chat: number,
+  prevIds: ReadonlySet<number> | null, ids: readonly number[],
+): boolean {
+  if (prevIds === null) return true;
+  if (chat > prevChat) return true;
+  return ids.some((id) => !prevIds.has(id));
+}
