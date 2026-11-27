@@ -114,6 +114,12 @@ python -m pip install -e fxkit --config-settings editable_mode=compat   # compat
 6. **PR とマージ（Claude がしてよい）** — PR を作り、3.〜5. がすべて通ったら（テストが緑・GUI で確かめ済み・レビューの指摘が直っている）
    ユーザーに聞かずに `gh pr merge --merge` でマージしてよい（履歴は「Merge pull request」のマージコミットの形）。
    テストが落ちている・GUI で確かめられなかった・ユーザーに聞くことが残っているときはマージせず、その理由を伝える
+7. **ショートカットのアプリを新しくする（マージの後に毎回）** — ユーザーがデスクトップのショートカットで起動するのは
+   `%LOCALAPPDATA%\AK Studio\ak-studio.exe`（`C:\Users\holmesfems\AppData\Local\AK Studio\ak-studio.exe`。`target\release` とは別）。
+   main を pull して `npm run tauri build -- --no-bundle` で作り、AK Studio が起動していないことを確かめてから、
+   今の exe の控えを `target\ak-studio.exe.bak-<YYYYMMDD>` に残して `target\release\ak-studio.exe` を上書きで写す。
+   起動中で写せないときは、閉じてもらうよう伝える。MCP（`target\release\ak-studio-mcp.exe`）や Mod（`claude-plugin/`）を変えたときは、それも作り直す・入れ直す。
+   Claude のデスクトップアプリの中からは `%LOCALAPPDATA%` に写しが重なって見えるので、**新しいファイルは作らず、今ある `ak-studio.exe` の上書きだけ**にする（上書きは本物に入る）
 
 ## 決まりごと
 

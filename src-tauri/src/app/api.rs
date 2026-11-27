@@ -495,10 +495,17 @@ async fn inbox(State(c): S, h: HeaderMap, Query(q): Query<InboxQ>) -> Response {
             Some((cur, seen)) => st >= cur || seen.elapsed().as_secs() > 70,
             None => true,
         };
-        if take {
-            *w = Some((st, std::time::Instant::now()));
-        } else {
+        if !take {
             return ok(json!({"messages": [], "superseded": true}));
+        }
+        let other = w.is_some_and(|(cur, _)| cur != st);
+        *w = Some((st, std::time::Instant::now()));
+        // 別のセッションに替わった: 前のセッションの「作業中」は、もう終わりの知らせが来ないので消す。
+        // 受け取り手を替えるのと消すのを、watcher のロックの中で一度に（agent_activity と入れ違わないように）
+        let cleared = other && c.hub.set_activity(false, "", crate::agent::now_ms());
+        drop(w); // claude_info は watcher を読むので、emit の前に外す
+        if cleared {
+            c.emit("claude", c.claude_info());
         }
     }
     // only=notice: 取り消しの知らせだけ（Mod が Claude の作業中に、作業を止めるかどうか決めるため）
@@ -615,12 +622,24 @@ struct ActivityReq {
     working: bool,
     #[serde(default)]
     text: String,
+    /// 知らせたセッションがつないだ時刻（inbox の started と同じ）。無ければ確かめない（古い Mod）
+    #[serde(default)]
+    started: Option<u64>,
 }
 
 /// Mod が、Claude の作業中か・何をしているかを知らせる（画面の「考え中」の表示用）
 async fn agent_activity(State(c): S, h: HeaderMap, Json(r): Json<ActivityReq>) -> Response {
     guard!(c, h);
-    if c.hub.set_activity(r.working, &r.text, crate::agent::now_ms()) {
+    // 別のセッションに替わったあとに、前のセッションから遅れて届いた知らせは使わない
+    // （「作業中」が残る・新しいセッションの作業状況を消すのを防ぐ）
+    // 確かめるのと書くのを watcher のロックの中で一度に（inbox で受け取り手が替わるのと入れ違わないように）
+    let w = c.hub.watcher.lock();
+    if r.started.is_some_and(|st| w.is_some_and(|(cur, _)| cur != st)) {
+        return ok(json!({"ok": true, "superseded": true}));
+    }
+    let changed = c.hub.set_activity(r.working, &r.text, crate::agent::now_ms());
+    drop(w); // claude_info は watcher を読むので、emit の前に外す
+    if changed {
         c.emit("claude", c.claude_info());
     }
     ok(json!({"ok": true}))

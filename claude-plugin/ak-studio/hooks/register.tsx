@@ -111,18 +111,36 @@ async function post($: any, s: Sess, path: string, body: any): Promise<any | nul
 async function report($: any, working: boolean, text: string) {
   try {
     const s = S.sess
+    const started = S.started
     if (!S.linked || !s) return
     const now = await $.clock.now()
+    // 待っている間に切った・つなぎ直したなら送らない（切ったあとの「作業中」は、誰も消さない）
+    if (!S.linked || S.started !== started) return
     if (!shouldSend(S.sent, { working, text }, now)) {
       if (working && S.sent?.working && S.sent.text !== text) S.wait = text
       return
     }
     S.wait = null
     S.sent = { working, text, at: now }
-    await post($, s, '/api/agent/activity', { working, text })
+    await post($, s, '/api/agent/activity', { working, text, started })
   } catch {
     // 知らせられなくても、Claude の作業には関係ない
   }
+}
+
+/**
+ * 切る。自分が「作業中」を知らせたままなら、先に終わりを知らせる（切ったあとは turn.complete でも知らせないので、
+ * 画面に「〜を使っています」が残ってしまう）。別のセッションに替わられたときは tell=false（本体が消すので、
+ * 新しいセッションの作業状況を上書きしない）
+ */
+async function unlink($: any, tell: boolean) {
+  const s = S.sess
+  const was = S.sent?.working === true
+  S.linked = false
+  S.sess = null
+  S.sent = null
+  S.wait = null
+  if (tell && was && s) await post($, s, '/api/agent/activity', { working: false, text: '', started: S.started })
 }
 
 /** Claude の作業中に届いた取り消しの知らせ */
@@ -153,8 +171,7 @@ async function tick($: any) {
   try {
     if (!hasPerson(S.interactive, await $.session.surfaces())) {
       // 画面が外れたら切る（作業状況を知らせ続けない）。manual は残し、つながり直したら戻す
-      S.linked = false
-      S.sess = null
+      if (S.linked) await unlink($, true)
       return
     }
     const s = await session($)
@@ -171,19 +188,20 @@ async function tick($: any) {
       S.started = await $.clock.now()
       $.ui.toast(`AK Studio（${proj.split('/').pop()}）とつなぎました。画面のチャットがこのセッションに届きます`)
     } else if (!want && S.linked) {
-      S.linked = false
+      await unlink($, true)
     }
     S.sess = S.linked ? s : null
-    if (S.linked && S.wait !== null && S.running) void report($, true, S.wait)
     if (S.linked) {
       // 作業中は取り消しの知らせだけを受け取る（ふつうのメッセージは AK Studio に置いたまま＝まだ取り消せる）
       const only = S.running ? '&only=notice' : ''
       const r = await api($, s, `/api/inbox?wait=0&consumer=mod&started=${S.started}${only}`)
       if (r?.superseded) {
-        S.linked = false
+        await unlink($, false)
         S.manual = false
         $.ui.toast('別の Claude のセッションが AK Studio につながったので、こちらは切りました（/studio on でつなぎ直す）')
       } else if (S.running) {
+        // 間引いて送らなかった最新の文。替わられていないと分かってから送る
+        if (S.wait !== null) void report($, true, S.wait)
         for (const n of r?.messages ?? []) await onNotice($, s, n)
       } else if (r?.messages?.length || S.later.length) {
         const ms = [...S.later, ...(r?.messages ?? [])]
