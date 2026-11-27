@@ -125,6 +125,21 @@ async function report($: any, working: boolean, text: string) {
   }
 }
 
+/**
+ * 切る。自分が「作業中」を知らせたままなら、先に終わりを知らせる（切ったあとは turn.complete でも知らせないので、
+ * 画面に「〜を使っています」が残ってしまう）。別のセッションに替わられたときは tell=false（本体が消すので、
+ * 新しいセッションの作業状況を上書きしない）
+ */
+async function unlink($: any, tell: boolean) {
+  const s = S.sess
+  const was = S.sent?.working === true
+  S.linked = false
+  S.sess = null
+  S.sent = null
+  S.wait = null
+  if (tell && was && s) await post($, s, '/api/agent/activity', { working: false, text: '' })
+}
+
 /** Claude の作業中に届いた取り消しの知らせ */
 async function onNotice($: any, s: Sess, n: any) {
   const of = Number(n?.ctx?.cancel_of)
@@ -153,8 +168,7 @@ async function tick($: any) {
   try {
     if (!hasPerson(S.interactive, await $.session.surfaces())) {
       // 画面が外れたら切る（作業状況を知らせ続けない）。manual は残し、つながり直したら戻す
-      S.linked = false
-      S.sess = null
+      if (S.linked) await unlink($, true)
       return
     }
     const s = await session($)
@@ -171,7 +185,7 @@ async function tick($: any) {
       S.started = await $.clock.now()
       $.ui.toast(`AK Studio（${proj.split('/').pop()}）とつなぎました。画面のチャットがこのセッションに届きます`)
     } else if (!want && S.linked) {
-      S.linked = false
+      await unlink($, true)
     }
     S.sess = S.linked ? s : null
     if (S.linked && S.wait !== null && S.running) void report($, true, S.wait)
@@ -180,7 +194,7 @@ async function tick($: any) {
       const only = S.running ? '&only=notice' : ''
       const r = await api($, s, `/api/inbox?wait=0&consumer=mod&started=${S.started}${only}`)
       if (r?.superseded) {
-        S.linked = false
+        await unlink($, false)
         S.manual = false
         $.ui.toast('別の Claude のセッションが AK Studio につながったので、こちらは切りました（/studio on でつなぎ直す）')
       } else if (S.running) {

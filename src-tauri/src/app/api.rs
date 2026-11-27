@@ -495,10 +495,15 @@ async fn inbox(State(c): S, h: HeaderMap, Query(q): Query<InboxQ>) -> Response {
             Some((cur, seen)) => st >= cur || seen.elapsed().as_secs() > 70,
             None => true,
         };
-        if take {
-            *w = Some((st, std::time::Instant::now()));
-        } else {
+        if !take {
             return ok(json!({"messages": [], "superseded": true}));
+        }
+        let other = w.is_some_and(|(cur, _)| cur != st);
+        *w = Some((st, std::time::Instant::now()));
+        drop(w);
+        // 別のセッションに替わった: 前のセッションの「作業中」は、もう終わりの知らせが来ないので消す
+        if other && c.hub.set_activity(false, "", crate::agent::now_ms()) {
+            c.emit("claude", c.claude_info());
         }
     }
     // only=notice: 取り消しの知らせだけ（Mod が Claude の作業中に、作業を止めるかどうか決めるため）
