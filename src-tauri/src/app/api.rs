@@ -500,9 +500,11 @@ async fn inbox(State(c): S, h: HeaderMap, Query(q): Query<InboxQ>) -> Response {
         }
         let other = w.is_some_and(|(cur, _)| cur != st);
         *w = Some((st, std::time::Instant::now()));
-        drop(w);
-        // 別のセッションに替わった: 前のセッションの「作業中」は、もう終わりの知らせが来ないので消す
-        if other && c.hub.set_activity(false, "", crate::agent::now_ms()) {
+        // 別のセッションに替わった: 前のセッションの「作業中」は、もう終わりの知らせが来ないので消す。
+        // 受け取り手を替えるのと消すのを、watcher のロックの中で一度に（agent_activity と入れ違わないように）
+        let cleared = other && c.hub.set_activity(false, "", crate::agent::now_ms());
+        drop(w); // claude_info は watcher を読むので、emit の前に外す
+        if cleared {
             c.emit("claude", c.claude_info());
         }
     }
@@ -630,12 +632,14 @@ async fn agent_activity(State(c): S, h: HeaderMap, Json(r): Json<ActivityReq>) -
     guard!(c, h);
     // 別のセッションに替わったあとに、前のセッションから遅れて届いた知らせは使わない
     // （「作業中」が残る・新しいセッションの作業状況を消すのを防ぐ）
-    if let Some(st) = r.started {
-        if c.hub.watcher.lock().is_some_and(|(cur, _)| cur != st) {
-            return ok(json!({"ok": true, "superseded": true}));
-        }
+    // 確かめるのと書くのを watcher のロックの中で一度に（inbox で受け取り手が替わるのと入れ違わないように）
+    let w = c.hub.watcher.lock();
+    if r.started.is_some_and(|st| w.is_some_and(|(cur, _)| cur != st)) {
+        return ok(json!({"ok": true, "superseded": true}));
     }
-    if c.hub.set_activity(r.working, &r.text, crate::agent::now_ms()) {
+    let changed = c.hub.set_activity(r.working, &r.text, crate::agent::now_ms());
+    drop(w); // claude_info は watcher を読むので、emit の前に外す
+    if changed {
         c.emit("claude", c.claude_info());
     }
     ok(json!({"ok": true}))
