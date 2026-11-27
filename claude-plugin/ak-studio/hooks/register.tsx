@@ -111,15 +111,18 @@ async function post($: any, s: Sess, path: string, body: any): Promise<any | nul
 async function report($: any, working: boolean, text: string) {
   try {
     const s = S.sess
+    const started = S.started
     if (!S.linked || !s) return
     const now = await $.clock.now()
+    // 待っている間に切った・つなぎ直したなら送らない（切ったあとの「作業中」は、誰も消さない）
+    if (!S.linked || S.started !== started) return
     if (!shouldSend(S.sent, { working, text }, now)) {
       if (working && S.sent?.working && S.sent.text !== text) S.wait = text
       return
     }
     S.wait = null
     S.sent = { working, text, at: now }
-    await post($, s, '/api/agent/activity', { working, text })
+    await post($, s, '/api/agent/activity', { working, text, started })
   } catch {
     // 知らせられなくても、Claude の作業には関係ない
   }
@@ -137,7 +140,7 @@ async function unlink($: any, tell: boolean) {
   S.sess = null
   S.sent = null
   S.wait = null
-  if (tell && was && s) await post($, s, '/api/agent/activity', { working: false, text: '' })
+  if (tell && was && s) await post($, s, '/api/agent/activity', { working: false, text: '', started: S.started })
 }
 
 /** Claude の作業中に届いた取り消しの知らせ */
@@ -188,7 +191,6 @@ async function tick($: any) {
       await unlink($, true)
     }
     S.sess = S.linked ? s : null
-    if (S.linked && S.wait !== null && S.running) void report($, true, S.wait)
     if (S.linked) {
       // 作業中は取り消しの知らせだけを受け取る（ふつうのメッセージは AK Studio に置いたまま＝まだ取り消せる）
       const only = S.running ? '&only=notice' : ''
@@ -198,6 +200,8 @@ async function tick($: any) {
         S.manual = false
         $.ui.toast('別の Claude のセッションが AK Studio につながったので、こちらは切りました（/studio on でつなぎ直す）')
       } else if (S.running) {
+        // 間引いて送らなかった最新の文。替わられていないと分かってから送る
+        if (S.wait !== null) void report($, true, S.wait)
         for (const n of r?.messages ?? []) await onNotice($, s, n)
       } else if (r?.messages?.length || S.later.length) {
         const ms = [...S.later, ...(r?.messages ?? [])]

@@ -620,11 +620,21 @@ struct ActivityReq {
     working: bool,
     #[serde(default)]
     text: String,
+    /// 知らせたセッションがつないだ時刻（inbox の started と同じ）。無ければ確かめない（古い Mod）
+    #[serde(default)]
+    started: Option<u64>,
 }
 
 /// Mod が、Claude の作業中か・何をしているかを知らせる（画面の「考え中」の表示用）
 async fn agent_activity(State(c): S, h: HeaderMap, Json(r): Json<ActivityReq>) -> Response {
     guard!(c, h);
+    // 別のセッションに替わったあとに、前のセッションから遅れて届いた知らせは使わない
+    // （「作業中」が残る・新しいセッションの作業状況を消すのを防ぐ）
+    if let Some(st) = r.started {
+        if c.hub.watcher.lock().is_some_and(|(cur, _)| cur != st) {
+            return ok(json!({"ok": true, "superseded": true}));
+        }
+    }
     if c.hub.set_activity(r.working, &r.text, crate::agent::now_ms()) {
         c.emit("claude", c.claude_info());
     }
