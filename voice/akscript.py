@@ -136,6 +136,29 @@ def save_voice(script_dir, voice):
     _atomic_write(Path(script_dir) / "_voice.json", json.dumps(voice, ensure_ascii=False))
 
 
+def append_edit_log(project_dir, entries):
+    """手直しの履歴（<回>/studio/edit_log.jsonl）の末尾に足す。形は AK Studio（src-tauri/src/script/editlog.rs）と同じ：
+    {"ts", "kind": text|speaker|accent|params, "line_id", "block_file", "before", "after", "source", "note"?}。
+    entries は ts・source を除いた dict の並び（ts は今、source は各 dict に無ければ voice_review_apply）。書いた件数を返す。"""
+    from datetime import datetime
+    entries = [e for e in entries if e.get("before") != e.get("after")]
+    if not entries:
+        return 0
+    ts = datetime.now().astimezone().isoformat(timespec="seconds")
+    d = Path(project_dir) / "studio"
+    d.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for e in entries:
+        row = {"ts": ts, "kind": e["kind"], "line_id": e["line_id"], "block_file": e.get("block_file"),
+               "before": e.get("before"), "after": e.get("after"), "source": e.get("source", "voice_review_apply")}
+        if e.get("note"):
+            row["note"] = e["note"]
+        rows.append(json.dumps(row, ensure_ascii=False))
+    with open(d / "edit_log.jsonl", "a", encoding="utf-8", newline="\n") as f:
+        f.write("".join(r + "\n" for r in rows))
+    return len(rows)
+
+
 def selftest():
     import tempfile
     with tempfile.TemporaryDirectory() as td:
@@ -192,6 +215,15 @@ def selftest():
             raise AssertionError("legacy voice should raise")
         except RuntimeError:
             pass
+    # 手直しの履歴（追記だけ。前後が同じものは書かない）
+    with tempfile.TemporaryDirectory() as td:
+        e = {"kind": "accent", "line_id": "l1", "block_file": "a.yaml", "before": None, "after": {"analyzed_text": "<x/>"}}
+        assert append_edit_log(td, [e, {**e, "line_id": "l2", "before": 1, "after": 1}]) == 1
+        assert append_edit_log(td, [{**e, "note": "理由"}]) == 1
+        rows = [json.loads(x) for x in (Path(td) / "studio" / "edit_log.jsonl").read_text(encoding="utf-8").splitlines()]
+        assert [r["source"] for r in rows] == ["voice_review_apply"] * 2, rows
+        assert "note" not in rows[0] and rows[1]["note"] == "理由", rows
+        assert rows[0]["before"] is None and rows[0]["after"]["analyzed_text"] == "<x/>", rows
     print("selftest OK")
 
 

@@ -107,6 +107,8 @@ pub struct Core {
     /// 裏の作り直しの依頼の番号（続けて来たら最後の 1 回だけ走らせる）
     guide_audio_seq: AtomicU64,
     guide_se_seq: AtomicU64,
+    /// 手直しの履歴（`studio/edit_log.jsonl`）の、まだ書いていない画面の変更（`script/editlog.rs`）
+    edit_log: Mutex<crate::script::editlog::EditLog>,
     /// 自分自身（裏のスレッドを起こすのに `&self` から Arc が要る）
     me: std::sync::OnceLock<std::sync::Weak<Core>>,
 }
@@ -160,12 +162,20 @@ impl Core {
             guide_se_lock: Mutex::new(()),
             guide_audio_seq: AtomicU64::new(0),
             guide_se_seq: AtomicU64::new(0),
+            edit_log: Mutex::new(Default::default()),
             me: std::sync::OnceLock::new(),
         });
         let _ = core.me.set(Arc::downgrade(&core));
         let c2 = Arc::downgrade(&core);
         let c3 = Arc::downgrade(&core);
         let c4 = Arc::downgrade(&core);
+        let c5 = Arc::downgrade(&core);
+        // 手直しの履歴: 手が止まった画面の変更を書く
+        std::thread::spawn(move || loop {
+            std::thread::sleep(Duration::from_secs(5));
+            let Some(c) = c5.upgrade() else { break };
+            c.flush_edit_log(false);
+        });
         core.hub.set_on_error(move |e| {
             if let Some(c) = c4.upgrade() {
                 c.notice_err("", e);
@@ -333,6 +343,8 @@ impl Core {
 
     // ------------------------------------------------------------------ 回を開く
     pub fn open_project(self: &Arc<Self>, path: &Path) -> Result<Snapshot> {
+        // 前の回の手直しの履歴を書き切る
+        self.flush_edit_log(true);
         let project = Project::open(path)?;
         if let Some(w) = &project.warning {
             self.notice_detail(w.clone(), project.warning_detail.clone());
@@ -523,12 +535,29 @@ impl Core {
     // ------------------------------------------------------------------ 台本
     /// 台本を保存して、声の並びを作り直す（返る前に `layout()` が新しい。中継への問い合わせも待つ）
     pub fn save_script(&self, s: Script) -> Result<Value> {
-        let r = self.save_script_file(s)?;
+        self.save_script_from(s, Some(crate::script::editlog::Origin::USER))
+    }
+
+    /// 誰の保存か（origin）を付けて保存する。セリフ・話者・アクセント・抑揚の変わった行を手直しの履歴に残す（None なら残さない）
+    pub fn save_script_from(&self, s: Script, origin: Option<crate::script::editlog::Origin>) -> Result<Value> {
+        let r = self.save_script_file(s, origin)?;
         self.refresh_voice(true);
         Ok(r)
     }
 
-    fn save_script_file(&self, s: Script) -> Result<Value> {
+    /// 手直しの履歴のまとめている分を書く（all なら手が止まっていなくても全部）
+    pub fn flush_edit_log(&self, all: bool) {
+        let items = self.edit_log.lock().take_idle(chrono::Local::now(), all);
+        self.write_edit_log(items);
+    }
+
+    fn write_edit_log(&self, items: Vec<(PathBuf, crate::script::editlog::Entry)>) {
+        for e in crate::script::editlog::append_all(items) {
+            self.engine.push_log(e);
+        }
+    }
+
+    fn save_script_file(&self, s: Script, origin: Option<crate::script::editlog::Origin>) -> Result<Value> {
         let mut st = self.st.write();
         let ps = st.as_mut().ok_or_else(crate::app::error::no_project)?;
         if ps.script.is_none() {
@@ -536,12 +565,23 @@ impl Core {
         }
         let store = ps.script.as_mut().unwrap();
         self.emit_script_notices(store);
+        // 手直しの履歴のため、保存の前の台本と画面から来た台本を残す
+        let before = origin.map(|_| (store.script.clone(), s.clone()));
         // 自分で書いたファイルは、見張りが読み直しても中身が同じ（changed_on_disk が false）なので印は要らない。
         // フォルダごとに印を付けると、打っている間の外からの変更を見落とす
         let changed = store.save(s);
         self.emit_script_notices(store);
         let changed = changed?;
         let external = store.merged_external;
+        if let (Some(origin), Some((before, ui))) = (origin, before) {
+            use crate::script::editlog;
+            let changes = editlog::save_changes(&before, &ui, &store.script, external);
+            if !changes.is_empty() {
+                let path = editlog::log_path(&ps.project.studio_dir());
+                let now = self.edit_log.lock().record(&path, changes, origin, chrono::Local::now());
+                self.write_edit_log(now);
+            }
+        }
         Ok(json!({"rev": store.script.rev, "changed": changed, "script": store.script, "external": external}))
     }
 

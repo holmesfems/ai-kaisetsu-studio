@@ -20,6 +20,7 @@
 //!
 //! 古い回（`.md` の表）は、開いたときに `_backup/<日時>-v2/` に写してから `.yaml` に移す（`migrate_md`）。
 
+pub mod editlog;
 pub mod format;
 pub mod ops;
 pub mod rekey;
