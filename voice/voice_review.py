@@ -208,6 +208,7 @@ def apply(args):
             new_dict.append({"surface": e["surface"], "reading": e["reading"], "accent": e["accent"]})
 
     new_voice = dict(proj.voice)
+    notes = {}  # 行の id → 確認画面のメモ（手直しの履歴の note）
     for ln in res.get("lines", []):
         st = ln.get("status") or "hold"
         print(f"  {ln['id']} {label.get(st, st)}：{ln.get('file', '')} #{ln.get('no', '')} {ln['text']}"
@@ -222,6 +223,8 @@ def apply(args):
                 print("    → 確認したあとで台本の文か話者が変わっているので書きません（案を作り直してください）")
                 continue
             new_voice[ln["id"]] = {"sp": cur["speaker"], "text": cur["text"], "analyzed_text": ln["analyzed_text"]}
+            if ln.get("note"):
+                notes[ln["id"]] = ln["note"]
 
     n_dict = len([x for x in new_dict if x not in entries])
     n_voice = len([k for k in new_voice if proj.voice.get(k) != new_voice[k]])
@@ -239,6 +242,15 @@ def apply(args):
         if proj.voice_file.exists():
             print(f"  _voice.json のバックアップ → {backup(proj.voice_file, proj.script)}")
         ak.save_voice(proj.script, new_voice)
+        # 手直しの履歴（studio/edit_log.jsonl）。AK Studio は読み直すだけで、この分は記録しない
+        try:
+            n = ak.append_edit_log(proj.path, [
+                {"kind": "accent", "line_id": k, "block_file": (proj.lines.get(k) or {}).get("file"),
+                 "before": proj.voice.get(k), "after": v, "note": notes.get(k)}
+                for k, v in new_voice.items() if proj.voice.get(k) != v])
+            print(f"  手直しの履歴に {n} 件 → {proj.path / 'studio' / 'edit_log.jsonl'}")
+        except OSError as e:
+            print(f"  手直しの履歴（studio/edit_log.jsonl）に書けませんでした: {e}")
     print("書き込みました。AK Studio が変更を自動で読み込みます（変わった行は AK Studio で作り直してください）")
 
 

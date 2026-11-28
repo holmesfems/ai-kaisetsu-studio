@@ -56,6 +56,27 @@ lines:
 - ほかの回から取り込んだ行（台本タブの「取り込む…」）は新しい id になり、元の行の調整を中身ごと新しい id の鍵に写す（sp・text は同じなのでそのまま効く）。
   取り込み元の回は一時フォルダに写してから読むので、古い `.md` の回でも書き換えない
 
+### 手直しの履歴（`<回>/studio/edit_log.jsonl`）
+
+台本の保存のたびに、保存の前と後を行の id で比べ、変わった所を 1 行（JSON）ずつ**追記**する（書いた行は書き換えない）。
+アクセント調整の学習セットに、ユーザーが画面で直した分（とくに、読みを直すためにセリフ自体を変えたもの）を入れるため。
+
+```json
+{"ts": "2026-11-28T10:00:00+09:00", "kind": "text", "line_id": "l51x9k", "block_file": "03_s2.yaml",
+ "before": "プラマニS2", "after": "プラマニのS2", "source": "user"}
+```
+
+- `kind`: `text`（セリフ）・`speaker`（話者）・`accent`（`_voice.json` のその行の値）・`params`（`_voice_params.json` のその行の値）。
+  text・speaker の before/after は文字列、accent・params は値そのもの（無ければ null）。行の追加・削除そのものは記録しない
+- `source`: `user`（画面）・`claude_proposal`（推敲案の採用・Claude の直接修正。`proposal_id` が `studio/proposals.json` の案の番号で、案の中身はそちら）・
+  `voice_review_apply`（`voice_review.py apply --write`。`voice/akscript.py` の `append_edit_log` が書く）
+- 画面の保存は打っている間 0.7 秒ごとに来るので、同じ行・同じ種類の変更は手が 20 秒止まるまで 1 件にまとめる（before は最初、after は最後）。
+  元に戻っていたら書かない。回を切り替えたとき・アプリを閉じたときは、まとめている分を書き切る（アプリが落ちると最後の 20 秒ぶんは残らない）
+- 外（Claude・voice_review）が書いたファイルを読み直しただけでは記録しない（voice_review は自分で書く）。
+  画面の保存と外の変更を一緒に読み直したときは、画面が送った中身になった所だけを画面の分として書く
+- `note`（理由）は任意。今は画面から付ける所は無い（voice_review は確認画面のメモを入れる）
+- 実装は `src-tauri/src/script/editlog.rs`（比べる・まとめる）と `core/mod.rs` の `save_script_from`
+
 ## 3. 古い回（`.md` の台本）からの移し方（AK Studio が回を開いたとき）
 
 `script/` に `_` で始まらない `.md` があり、同じ名前の `.yaml` が無ければ、移す:

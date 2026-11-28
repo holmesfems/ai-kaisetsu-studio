@@ -697,7 +697,8 @@ async fn memo(State(c): S, h: HeaderMap, Json(r): Json<MemoReq>) -> Response {
     blocking(move || {
         let mut s = c.script_or_new()?;
         s.memo = r.memo;
-        let v = c.save_script(s)?;
+        // 構成メモだけの保存（セリフ・声の手直しは変えないので、手直しの履歴には残さない）
+        let v = c.save_script_from(s, None)?;
         c.emit("script", json!({"script": v["script"], "external": true}));
         Ok(json!({"ok": true}))
     })

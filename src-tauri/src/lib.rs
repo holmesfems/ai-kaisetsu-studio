@@ -334,6 +334,8 @@ pub fn run() {
         .expect("error while building AK Studio")
         .run(move |_app, ev| {
             if let tauri::RunEvent::Exit = ev {
+                // まとめている手直しの履歴を書き切る
+                core_exit.flush_edit_log(true);
                 core_exit.engine.shutdown();
                 core_exit.subs.shutdown();
                 core_exit.voice.stop();

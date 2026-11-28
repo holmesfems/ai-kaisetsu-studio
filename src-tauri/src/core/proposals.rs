@@ -42,7 +42,7 @@ impl Core {
         }
         self.hub.save_proposals();
         if accept {
-            let r = self.save_script(script)?;
+            let r = self.save_script_from(script, Some(crate::script::editlog::Origin::proposal(pid)))?;
             self.emit("script", json!({"script": r["script"], "external": false}));
         }
         self.emit("proposals", serde_json::to_value(&*self.hub.proposals.lock())?);
