@@ -37,6 +37,10 @@ test('組み込みツール', () => {
   assert.equal(d({ tool: 'TodoWrite' }), '`TodoWrite` を使っています')
 })
 
+test('ほかの Mod が裏で呼ぶツールは知らせない', () => {
+  assert.equal(d({ tool: 'mcp__ccd_pr__get_status' }), null)
+})
+
 test('サブエージェントは頭に付く', () => {
   assert.equal(d({ tool: 'Read', file_path: 'a.md', agentId: 'x' }), '（サブエージェント）「a.md」を読んでいます')
   assert.equal(d({ tool: 'mcp__ak-studio__reply', agentId: 'x' }), null)

@@ -272,9 +272,12 @@ export const register: Register = (on) => {
     return next(e)
   })
 
-  // ツールを呼ぶたびに、何をしているかを知らせる（呼び出しは止めも変えもしない）
+  // ツールを呼ぶたびに、何をしているかを知らせる（呼び出しは止めも変えもしない）。
+  // ターンの外の呼び出し（ほかの Mod が $.tool.call で呼ぶもの。merge-watch の get_status など）は Claude の作業ではないので知らせない
+  // （知らせると、ターンの終わりの知らせが来ないので「〜を使っています」が残り続ける）
   on('tool.call', async ($, e, next) => {
     try {
+      if (!S.running) return next(e)
       const t = describeToolCall(e as any)
       if (t !== null) void report($, true, t)
     } catch {
