@@ -53,16 +53,12 @@ function studioTool(name: string, e: ToolCall): string | null {
   }
 }
 
-// ほかの Mod が裏で決まった間隔で呼ぶツール（merge-watch の PR の見張りなど）。Claude の作業ではないので知らせない
-const BACKGROUND = new Set(['mcp__ccd_pr__get_status'])
-
 /**
- * ツール呼び出しを、画面に出す文にする。知らせなくてよいもの（reply の本文・裏で呼ばれるツール）は null。
+ * ツール呼び出しを、画面に出す文にする。知らせなくてよいもの（reply の本文）は null。
  * サブエージェントの作業（agentId あり）は頭に「（サブエージェント）」を付ける。
  */
 export function describeToolCall(e: ToolCall): string | null {
   const t = String(e.tool || '')
-  if (BACKGROUND.has(t)) return null
   let s: string | null
   if (t.startsWith('mcp__ak-studio__')) {
     s = studioTool(t.slice('mcp__ak-studio__'.length), e)

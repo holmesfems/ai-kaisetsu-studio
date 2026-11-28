@@ -273,11 +273,11 @@ export const register: Register = (on) => {
   })
 
   // ツールを呼ぶたびに、何をしているかを知らせる（呼び出しは止めも変えもしない）。
-  // ターンの外の呼び出し（ほかの Mod が $.tool.call で呼ぶもの。merge-watch の get_status など）は Claude の作業ではないので知らせない
-  // （知らせると、ターンの終わりの知らせが来ないので「〜を使っています」が残り続ける）
+  // 知らせるのは Claude（エンジン）が呼んだものだけ。ほかの Mod が $.tool.call で呼ぶもの（merge-watch が 10 秒おきに呼ぶ
+  // get_status など）や、ターンの外の呼び出しは知らせない（ターンの終わりの知らせが来ないので「〜を使っています」が残り続ける）
   on('tool.call', async ($, e, next) => {
+    if (!S.running || next.origin.plugin !== 'engine') return next(e)
     try {
-      if (!S.running) return next(e)
       const t = describeToolCall(e as any)
       if (t !== null) void report($, true, t)
     } catch {
